@@ -9,12 +9,10 @@ export default async function handler(req, res) {
   const key = process.env.WINDY_API_KEY;
   if (!key) return res.status(500).json({ error: 'WINDY_API_KEY not configured' });
 
-  // Windy max radius = 250km. We search broad then score client-side.
-  const radius = 250;
-
   try {
+    // Windy hard limit: radius max 250km
     const url = `https://api.windy.com/webcams/api/v3/webcams` +
-      `?nearby=${lat},${lon},${radius}` +
+      `?nearby=${lat},${lon},250` +
       `&limit=20` +
       `&fields=webcamId,title,location,player,status,lastUpdatedOn`;
 
