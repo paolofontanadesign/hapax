@@ -1115,66 +1115,65 @@ async function findAndShowWebcam() {
   const lat = state.ambient.lat || 45.40;
   const lon = state.ambient.lon || 11.87;
 
-  // 1. Query Overpass for cameras within 1km
-  const query = `[out:json][timeout:20];(
-    node["man_made"="surveillance"](around:1000,${lat},${lon});
-    node["tourism"="webcam"](around:1000,${lat},${lon});
-    node["man_made"="webcam"](around:1000,${lat},${lon});
-  );out body;`;
+  // 1. Query Windy directly via proxy — wider radius, best available
+  let playerUrl = null;
+  let camName   = '';
+  let camDist   = null;
 
-  let nodes = [];
   try {
-    const res = await fetch('https://overpass-api.de/api/interpreter',
+    const res  = await fetch(`/api/webcams?lat=${lat}&lon=${lon}&radius=50000`);
+    const data = await res.json();
+    const webcams = data.webcams || [];
+
+    if (webcams.length > 0) {
+      // Pick camera with highest score toward user position
+      // Windy doesn't give bearing so just take nearest
+      const w = webcams[0];
+      playerUrl = w.player?.day?.embed || w.player?.embed || null;
+      camName   = w.title || '';
+      // Rough distance from location field if available
+      if (w.location?.latitude && w.location?.longitude) {
+        const R = 6371000;
+        const dLat = (w.location.latitude - lat) * Math.PI / 180;
+        const dLon = (w.location.longitude - lon) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180)*Math.cos(w.location.latitude*Math.PI/180)*Math.sin(dLon/2)**2;
+        camDist = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+      }
+    }
+  } catch(e) { /* proxy not available locally */ }
+
+  // 2. Also check Overpass for cameras pointing at user (metadata only)
+  let bestOSM = null;
+  try {
+    const query = `[out:json][timeout:15];(
+      node["man_made"="surveillance"](around:2000,${lat},${lon});
+      node["tourism"="webcam"](around:2000,${lat},${lon});
+    );out body;`;
+    const res  = await fetch('https://overpass-api.de/api/interpreter',
       { method: 'POST', body: query });
     const data = await res.json();
-    nodes = data.elements || [];
-  } catch(e) { /* fail silently */ }
-
-  // 2. Score each camera: prioritize those pointing at user
-  let best = null;
-  let bestScore = -1;
-
-  for (const n of nodes) {
-    const tags = n.tags || {};
-    const dist = haversine(lat, lon, n.lat, n.lon);
-    const camDir = tags['camera:direction'] != null ? parseFloat(tags['camera:direction']) : null;
-    const fov = tags['camera:angle'] ? parseFloat(tags['camera:angle'])
-              : tags['camera:type'] === 'dome' ? 360 : 60;
-    const bearingFromCam = (bearing(lat, lon, n.lat, n.lon) + 180) % 360;
-
-    let score = Math.max(0, 100 - dist / 10);
-    if (camDir !== null) {
+    const nodes = data.elements || [];
+    // Find best pointed at user
+    for (const n of nodes) {
+      const tags = n.tags || {};
+      const camDir = tags['camera:direction'] != null ? parseFloat(tags['camera:direction']) : null;
+      if (camDir === null) continue;
+      const fov = tags['camera:angle'] ? parseFloat(tags['camera:angle']) : 60;
+      const R = 6371000, r = d => d * Math.PI / 180;
+      const y = Math.sin(r(lon-n.lon))*Math.cos(r(lat));
+      const x = Math.cos(r(n.lat))*Math.sin(r(lat))-Math.sin(r(n.lat))*Math.cos(r(lat))*Math.cos(r(lon-n.lon));
+      const bearingFromCam = (Math.atan2(y,x)*180/Math.PI+360)%360;
       const diff = ((bearingFromCam - camDir + 540) % 360) - 180;
-      if (Math.abs(diff) <= fov / 2) score += 80; // pointing at user
-    }
-
-    const directUrl = tags['contact:webcam'] || tags.url || tags.website || null;
-    if (score > bestScore) {
-      bestScore = score;
-      best = { lat: n.lat, lon: n.lon, dist: Math.round(dist),
-               name: tags.name || 'camera', directUrl, id: n.id };
-    }
-  }
-
-  // 3. Try to get a Windy stream via our proxy
-  let playerUrl = null;
-  let imageUrl  = null;
-
-  if (best) {
-    try {
-      const res = await fetch(`/api/webcams?lat=${best.lat}&lon=${best.lon}&radius=500`);
-      const data = await res.json();
-      const webcams = data.webcams || [];
-      if (webcams.length > 0) {
-        const w = webcams[0];
-        // Prefer still image (thumbnail) for blending — less intrusive than video
-        playerUrl = w.player?.day?.embed || w.player?.embed || null;
-        imageUrl  = w.images?.current?.preview || w.images?.daylight?.preview || null;
+      if (Math.abs(diff) <= fov / 2) {
+        const dLat=(lat-n.lat)*Math.PI/180, dLon=(lon-n.lon)*Math.PI/180;
+        const a=Math.sin(dLat/2)**2+Math.cos(n.lat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(dLon/2)**2;
+        bestOSM = { name: tags.name||'camera', dist: Math.round(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))) };
+        break;
       }
-    } catch(e) { /* proxy not available locally */ }
-  }
+    }
+  } catch(e) {}
 
-  // 4. Show overlay with CRT filter
+  // 3. Show overlay
   const overlay  = document.getElementById('cam-overlay');
   const camFrame = document.getElementById('cam-iframe');
   const label    = document.getElementById('cam-label');
@@ -1183,24 +1182,17 @@ async function findAndShowWebcam() {
 
   if (playerUrl) {
     camFrame.src = playerUrl;
-
-    const labelLines = [
-      `● live`,
-      best ? `${best.dist}m  ${best.name}` : '',
-      timeStr,
-    ].filter(Boolean).join('\n');
-    label.textContent = labelLines;
-
+    const distStr = camDist ? `${camDist}m` : bestOSM ? `${bestOSM.dist}m` : '';
+    const nameStr = bestOSM ? bestOSM.name : camName;
+    label.textContent = [distStr, nameStr, timeStr].filter(Boolean).join('  ');
     overlay.classList.add('visible');
     startCRTFilter();
-  } else if (best) {
-    // No stream found but camera exists — show label ghost only
+  } else if (bestOSM) {
     camFrame.src = '';
-    label.textContent = `no stream · ${best.dist}m · ${best.name}`;
+    label.textContent = `no stream · ${bestOSM.dist}m · ${bestOSM.name}`;
     overlay.classList.add('visible');
     startCRTFilter();
   }
-  // Nothing found: stays hidden
 }
 
 // ── CRT scanlines + noise canvas — runs continuously over the iframe ──
