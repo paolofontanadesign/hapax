@@ -331,7 +331,7 @@
 // ─────────────────────────────────────────
 const state = {
   step: -1,
-  ambient: { hour: 0, minute: 0, season: 0, lat: 45, lon: 11, weather: null },
+  ambient: { hour: 0, minute: 0, season: 0, lat: 45.40, lon: 11.87, weather: null },
 };
 
 // ─────────────────────────────────────────
@@ -1075,8 +1075,18 @@ function finalize() {
     document.getElementById('hapax-footer').classList.add('visible');
   }, 1800);
 
-  // Auto-show webcam over field after 3s
-  setTimeout(findAndShowWebcam, 3000);
+  // Show webcam after field settles — wait for geolocation to resolve first
+  setTimeout(() => {
+    // If geolocation hasn't resolved yet, wait a bit more
+    const tryWebcam = () => {
+      if (state.ambient.lat !== 45.40 || state.ambient.lon !== 11.87) {
+        findAndShowWebcam();
+      } else {
+        setTimeout(findAndShowWebcam, 2000);
+      }
+    };
+    tryWebcam();
+  }, 3000);
 }
 // ─────────────────────────────────────────
 // INTRO — start
