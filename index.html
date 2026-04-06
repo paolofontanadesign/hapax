@@ -110,22 +110,24 @@
   #hapax-footer.visible { opacity: 1; }
   #hapax-footer .footer-id {
     font-family: var(--mono);
-    font-size: clamp(28px, 5vw, 52px);
-    letter-spacing: 0.32em;
-    color: rgba(232,228,220,0.92);
+    font-size: clamp(32px, 6vw, 64px);
+    letter-spacing: 0.36em;
+    color: rgba(232,228,220,0.95);
     text-transform: uppercase;
     display: block;
-    margin-bottom: 28px;
+    margin-bottom: 32px;
     font-weight: 400;
+    text-shadow: 0 0 40px rgba(232,228,220,0.3);
   }
   #hapax-footer .footer-meta {
     font-family: var(--mono);
-    font-size: clamp(11px, 1.4vw, 15px);
-    letter-spacing: 0.16em;
-    color: rgba(232,228,220,0.52);
+    font-size: clamp(13px, 1.6vw, 18px);
+    letter-spacing: 0.14em;
+    color: rgba(232,228,220,0.75);
     text-transform: uppercase;
-    line-height: 2.2;
+    line-height: 2.4;
     white-space: pre;
+    text-shadow: 0 0 20px rgba(232,228,220,0.2);
   }
 
   /* progress dots */
@@ -258,14 +260,15 @@
     bottom: 24px;
     left: 28px;
     font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    color: rgba(140,255,140,0.55);
+    font-size: clamp(11px, 1.3vw, 14px);
+    letter-spacing: 0.14em;
+    color: rgba(140,255,140,0.85);
     text-transform: uppercase;
     white-space: pre;
     pointer-events: none;
     z-index: 5;
-    text-shadow: 0 0 8px rgba(100,255,100,0.4);
+    line-height: 1.9;
+    text-shadow: 0 0 12px rgba(100,255,100,0.5);
   }
 
   /* REC indicator */
@@ -1125,87 +1128,100 @@ async function findAndShowWebcam() {
   const lat = state.ambient.lat || 45.40;
   const lon = state.ambient.lon || 11.87;
 
-  let playerUrl = null;
-  let camTitle  = '';
-  let camLat    = null, camLon = null;
+  let bestCam   = null;
   let camDist   = null;
-  let camDir    = null;
+  let camLat    = null, camLon = null;
 
-  // Query proxy — radius capped at 250 (Windy hard limit)
   try {
     const res  = await fetch(`/api/webcams?lat=${lat}&lon=${lon}`);
     const data = await res.json();
     const webcams = (data.webcams || []).filter(w => w.status === 'active');
 
-    if (webcams.length > 0) {
-      // Score: prefer cameras whose title contains a direction word
-      // pointing roughly toward user, or just pick closest
-      const scored = webcams.map(w => {
-        let score = 0;
-        const t = (w.title || '').toLowerCase();
-        // Cardinal hints in title — crude but works for many Windy cams
-        if (w.location?.latitude && w.location?.longitude) {
-          const dLat = (w.location.latitude - lat) * Math.PI / 180;
-          const dLon = (w.location.longitude - lon) * Math.PI / 180;
-          const a = Math.sin(dLat/2)**2 +
-            Math.cos(lat*Math.PI/180)*Math.cos(w.location.latitude*Math.PI/180)*
-            Math.sin(dLon/2)**2;
-          const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          score -= d / 1000; // closer = better base score
-        }
-        // Boost if title mentions direction toward user
-        const bearToUser = bearing(w.location?.latitude||lat, w.location?.longitude||lon, lat, lon);
-        const dirs = { north:0, northeast:45, east:90, southeast:135,
-                       south:180, southwest:225, west:270, northwest:315,
-                       nord:0, est:90, sud:180, ovest:270 };
-        for (const [word, deg] of Object.entries(dirs)) {
+    if (webcams.length === 0) return;
+
+    // Score cameras by direction toward user
+    const scored = webcams.map(w => {
+      let score = 1000;
+      const t = (w.title || '').toLowerCase();
+
+      // Compute distance if location available
+      if (w.location?.latitude && w.location?.longitude) {
+        const dLat = (w.location.latitude - lat) * Math.PI / 180;
+        const dLon = (w.location.longitude - lon) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 +
+          Math.cos(lat*Math.PI/180)*Math.cos(w.location.latitude*Math.PI/180)*
+          Math.sin(dLon/2)**2;
+        const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        score -= d / 100;
+
+        // Boost if title contains direction pointing roughly toward user
+        const btu = bearing(w.location.latitude, w.location.longitude, lat, lon);
+        const dirMap = {
+          'north':0,'northeast':45,'east':90,'southeast':135,
+          'south':180,'southwest':225,'west':270,'northwest':315,
+          'nord':0,'est':90,'sud':180,'ovest':270,
+          '› n':0,'› ne':45,'› e':90,'› se':135,
+          '› s':180,'› sw':225,'› w':270,'› nw':315,
+          '› north':0,'› south':180,'› east':90,'› west':270,
+        };
+        for (const [word, deg] of Object.entries(dirMap)) {
           if (t.includes(word)) {
-            const diff = Math.abs(((bearToUser - deg + 540) % 360) - 180);
-            if (diff < 60) score += 200;
+            const diff = Math.abs(((btu - deg + 540) % 360) - 180);
+            if (diff < 70) score += 500;
+            break;
           }
         }
-        return { w, score };
-      }).sort((a,b) => b.score - a.score);
-
-      const best = scored[0].w;
-      playerUrl = best.player?.day?.embed || best.player?.embed || null;
-      camTitle  = best.title || '';
-      if (best.location?.latitude && best.location?.longitude) {
-        camLat = best.location.latitude;
-        camLon = best.location.longitude;
-        const dLat = (camLat - lat) * Math.PI / 180;
-        const dLon = (camLon - lon) * Math.PI / 180;
-        const a = Math.sin(dLat/2)**2 +
-          Math.cos(lat*Math.PI/180)*Math.cos(camLat*Math.PI/180)*
-          Math.sin(dLon/2)**2;
-        camDist = Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-        // Bearing FROM camera TO user
-        camDir = Math.round(bearing(camLat, camLon, lat, lon));
       }
-    }
-  } catch(e) {}
 
-  if (!playerUrl) return; // nothing to show
+      // Prefer cams with player data already in response
+      if (w.player) score += 200;
+
+      return { w, score };
+    }).sort((a,b) => b.score - a.score);
+
+    bestCam = scored[0].w;
+
+    if (bestCam.location?.latitude && bestCam.location?.longitude) {
+      camLat = bestCam.location.latitude;
+      camLon = bestCam.location.longitude;
+      const dLat = (camLat - lat) * Math.PI / 180;
+      const dLon = (camLon - lon) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 +
+        Math.cos(lat*Math.PI/180)*Math.cos(camLat*Math.PI/180)*
+        Math.sin(dLon/2)**2;
+      camDist = Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+    }
+  } catch(e) { return; }
+
+  if (!bestCam) return;
+
+  // Build player URL — try from response first, fallback to public embed by webcamId
+  let playerUrl = bestCam.player?.day?.embed
+               || bestCam.player?.embed
+               || `https://webcams.windy.com/webcams/public/embed/player/${bestCam.webcamId}/day`;
 
   const overlay  = document.getElementById('cam-overlay');
   const camFrame = document.getElementById('cam-iframe');
   const label    = document.getElementById('cam-label');
-  const now      = new Date();
+
+  const now = new Date();
   const pad = n => String(n).padStart(2,'0');
   const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
   const dateStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   const distStr = camDist
     ? (camDist >= 1000 ? `${(camDist/1000).toFixed(1)}km` : `${camDist}m`)
     : '—';
-  const dirLabel = camDir !== null
-    ? ['N','NE','E','SE','S','SW','W','NW'][Math.round(camDir/45)%8]
+  const camBearing = (camLat && camLon)
+    ? Math.round(bearing(camLat, camLon, lat, lon)) : null;
+  const dirStr = camBearing !== null
+    ? `${['N','NE','E','SE','S','SW','W','NW'][Math.round(camBearing/45)%8]} ${camBearing}°`
     : '—';
 
   label.textContent = [
-    `CAM  ${camTitle}`,
-    `DIST ${distStr}   DIR ${dirLabel} ${camDir !== null ? camDir+'°' : ''}`,
-    `LOC  ${(camLat||lat).toFixed(4)}° ${(camLon||lon).toFixed(4)}°`,
-    `UTC  ${dateStr} ${timeStr}`,
+    `CAM  ${bestCam.title || ''}`,
+    `DIST ${distStr}   DIR ${dirStr}`,
+    `LOC  ${(camLat||lat).toFixed(4)}°  ${(camLon||lon).toFixed(4)}°`,
+    `UTC  ${dateStr}  ${timeStr}`,
   ].join('\n');
 
   camFrame.src = playerUrl;
