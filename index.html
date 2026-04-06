@@ -96,116 +96,72 @@
   }
 
   /* ambient data overlay — large, centered, on top of field */
+  /* ── HAPAX LABEL — bottom left ── */
   #hapax-footer {
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    text-align: center;
+    bottom: 24px;
+    left: 28px;
     opacity: 0;
-    transition: opacity 3s ease 2s;
+    transition: opacity 3s ease 1s;
     pointer-events: none;
-    z-index: 20;
+    z-index: 25;
   }
   #hapax-footer.visible { opacity: 1; }
   #hapax-footer .footer-id {
     font-family: var(--mono);
-    font-size: clamp(32px, 6vw, 64px);
-    letter-spacing: 0.36em;
-    color: rgba(232,228,220,0.95);
+    font-size: 9px;
+    letter-spacing: 0.28em;
+    color: rgba(232,228,220,0.3);
     text-transform: uppercase;
     display: block;
-    margin-bottom: 32px;
-    font-weight: 400;
-    text-shadow: 0 0 40px rgba(232,228,220,0.3);
+    margin-bottom: 4px;
   }
   #hapax-footer .footer-meta {
     font-family: var(--mono);
-    font-size: clamp(13px, 1.6vw, 18px);
-    letter-spacing: 0.14em;
-    color: rgba(232,228,220,0.75);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: rgba(232,228,220,0.18);
     text-transform: uppercase;
-    line-height: 2.4;
+    line-height: 1.8;
     white-space: pre;
-    text-shadow: 0 0 20px rgba(232,228,220,0.2);
   }
+
+  /* ── MINIMAP — bottom right ── */
+  #minimap {
+    position: fixed;
+    bottom: 24px;
+    right: 28px;
+    width: 140px;
+    height: 140px;
+    z-index: 25;
+    opacity: 0;
+    transition: opacity 2s ease 1s;
+    pointer-events: none;
+    border: 0.5px solid rgba(140,255,140,0.2);
+  }
+  #minimap.visible { opacity: 1; }
 
   /* progress dots */
   #progress.visible { opacity: 1; }
   .dot.active { background: var(--fg); transform: scale(1.4); }
 
-  /* ambient system info */
+  /* ── AMBIENT BAR — top left, single clean line ── */
   #ambient-bar {
     position: fixed;
-    top: 32px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 32px;
+    top: 24px;
+    left: 28px;
     font-family: var(--mono);
-    font-size: 8px;
-    letter-spacing: 0.16em;
-    color: var(--fg-dim);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: rgba(232,228,220,0.55);
     text-transform: uppercase;
     opacity: 0;
     transition: opacity 1.2s;
     white-space: nowrap;
-  }
-  #ambient-bar.visible { opacity: 1; }
-
-  /* opening screen */
-  #intro {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: opacity 1.6s ease;
-  }
-  #intro.fade { opacity: 0; pointer-events: none; }
-
-  #intro-title {
-    font-family: var(--mono);
-    font-size: clamp(28px, 5vw, 42px);
-    letter-spacing: 0.32em;
-    color: var(--fg);
-    margin-bottom: 48px;
-    font-weight: 400;
-  }
-  #intro-sub {
-    font-family: var(--serif);
-    font-size: clamp(13px, 1.8vw, 16px);
-    color: var(--fg-dim);
-    font-style: italic;
-    text-align: center;
-    line-height: 1.7;
-    max-width: 360px;
-  }
-  #intro-cue {
-    position: absolute;
-    bottom: 40px;
-    font-family: var(--mono);
-    font-size: 8px;
-    letter-spacing: 0.2em;
-    color: var(--fg-dim);
-    text-transform: uppercase;
-    animation: pulse 2.8s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
-
-  /* subtle grid on intro */
-  #intro::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(rgba(232,228,220,0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(232,228,220,0.03) 1px, transparent 1px);
-    background-size: 80px 80px;
+    z-index: 25;
     pointer-events: none;
   }
+  #ambient-bar.visible { opacity: 1; }
 
   /* ── WEBCAM CRT OVERLAY ── */
   #cam-overlay {
@@ -299,18 +255,16 @@
 <!-- ambient data bar -->
 <div id="ambient-bar">
   <span id="amb-time">--:--</span>
+  <span id="amb-sep1"> · </span>
   <span id="amb-loc">--</span>
+  <span id="amb-sep2"> · </span>
   <span id="amb-season">--</span>
+  <span id="amb-sep3"> · </span>
   <span id="amb-weather">--</span>
 </div>
 
 
-<!-- opening screen -->
-<div id="intro">
-  <div id="intro-title">HAPAX</div>
-  <div id="intro-sub">What happens now<br>will not happen again.</div>
-  <div id="intro-cue">touch to begin</div>
-</div>
+
 
 
 
@@ -319,6 +273,9 @@
   <span class="footer-id">hapax</span>
   <span class="footer-meta" id="footer-meta"></span>
 </div>
+
+<!-- minimap — bottom right -->
+<canvas id="minimap"></canvas>
 
 <!-- webcam CRT overlay — auto-appears, blended over field -->
 <div id="cam-overlay">
@@ -1053,26 +1010,14 @@ function finalize() {
   // Sound — slightly delayed so visual leads
   setTimeout(() => startAmbientSound(bucolicity, seed), 1200);
 
-  // Footer
-  const now   = new Date();
-  const ts    = now.toISOString().replace('T',' ').substring(0, 16);
-  const lat   = (state.ambient.lat || 45.40).toFixed(3);
-  const lon   = (state.ambient.lon || 11.87).toFixed(3);
-  const wMain = state.ambient.weather ? state.ambient.weather.main : '';
-  const wTemp = state.ambient.weather ? `${Math.round(state.ambient.weather.temp)}°c` : '';
-  const wWind = state.ambient.weather ? `${Math.round(state.ambient.weather.wind)} m/s` : '';
+  // Minimal bottom-left label — just season/state
   const label = bucolicity > 0.68 ? 'pastoral'
               : bucolicity > 0.38 ? 'liminal'
               : 'nocturnal';
-
-  const metaLines = [
-    ts,
-    `${lat}°  ${lon}°`,
-    wMain ? `${wMain}  ${wTemp}  ${wWind}` : '',
-    `${label}  ·  ${(bucolicity * 100).toFixed(0)}%`,
-  ].filter(Boolean).join('\n');
-
-  document.getElementById('footer-meta').textContent = metaLines;
+  const now2  = new Date();
+  const pad2  = n => String(n).padStart(2,'0');
+  document.getElementById('footer-meta').textContent =
+    `${label}\n${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(now2.getDate())}  ${pad2(now2.getHours())}:${pad2(now2.getMinutes())}`;
 
   setTimeout(() => {
     document.getElementById('hapax-footer').classList.add('visible');
@@ -1094,16 +1039,7 @@ function finalize() {
 // ─────────────────────────────────────────
 // INTRO — start
 // ─────────────────────────────────────────
-const intro = document.getElementById('intro');
-intro.addEventListener('click', () => {
-  intro.classList.add('fade');
-  document.getElementById('ambient-bar').classList.add('visible');
-  setTimeout(() => {
-    intro.style.display = 'none';
-    // Wait briefly for ambient data, then generate
-    setTimeout(finalize, 800);
-  }, 1600);
-});
+// Auto-start — no intro screen
 
 // ─────────────────────────────────────────
 // WEBCAM — auto-shows best camera pointing at user
@@ -1227,6 +1163,14 @@ async function findAndShowWebcam() {
   camFrame.src = playerUrl;
   overlay.classList.add('visible');
   startCRTFilter();
+
+  // Minimap — user vs camera position
+  if (camLat && camLon) {
+    const userLat2 = state.ambient.lat || 45.40;
+    const userLon2 = state.ambient.lon || 11.87;
+    drawMinimap(userLat2, userLon2, camLat, camLon);
+    drawUserDotOnCam(camLat, camLon, camBearing || 0, userLat2, userLon2);
+  }
 }
 
 function bearing(lat1, lon1, lat2, lon2) {
@@ -1290,6 +1234,132 @@ function startCRTFilter() {
   }
   drawCRT();
 }
+
+// ── MINIMAP ──────────────────────────────
+function drawMinimap(userLat, userLon, camLat, camLon) {
+  const canvas = document.getElementById('minimap');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width  = 140;
+  const H = canvas.height = 140;
+
+  ctx.fillStyle = 'rgba(4,4,10,0.85)';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(140,255,140,0.06)';
+  ctx.lineWidth = 0.5;
+  for (let i = 1; i < 4; i++) {
+    ctx.beginPath(); ctx.moveTo(W*i/4,0); ctx.lineTo(W*i/4,H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,H*i/4); ctx.lineTo(W,H*i/4); ctx.stroke();
+  }
+
+  const latCtr = (userLat + camLat) / 2;
+  const lonCtr = (userLon + camLon) / 2;
+  const latRange = Math.max(Math.abs(userLat - camLat), 0.015) * 1.4;
+  const lonRange = Math.max(Math.abs(userLon - camLon), 0.015) * 1.4;
+
+  const toX = lon => (lon - lonCtr) / lonRange * W + W/2;
+  const toY = lat => H/2 - (lat - latCtr) / latRange * H;
+
+  const ux = toX(userLon), uy = toY(userLat);
+  const cx = toX(camLon),  cy = toY(camLat);
+
+  // Dashed line
+  ctx.strokeStyle = 'rgba(140,255,140,0.18)';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([3,5]);
+  ctx.beginPath(); ctx.moveTo(ux,uy); ctx.lineTo(cx,cy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // FOV cone from camera toward user
+  const ang = Math.atan2(uy-cy, ux-cx);
+  ctx.fillStyle = 'rgba(140,255,140,0.06)';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(ang-0.5)*20, cy + Math.sin(ang-0.5)*20);
+  ctx.lineTo(cx + Math.cos(ang+0.5)*20, cy + Math.sin(ang+0.5)*20);
+  ctx.closePath(); ctx.fill();
+
+  // Camera circle
+  ctx.strokeStyle = 'rgba(140,255,140,0.65)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.stroke();
+
+  // User dot
+  ctx.fillStyle = 'rgba(255,80,80,0.9)';
+  ctx.beginPath(); ctx.arc(ux,uy,3,0,Math.PI*2); ctx.fill();
+
+  ctx.font = '7px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(140,255,140,0.4)';
+  ctx.fillText('CAM', cx, cy - 8);
+  ctx.fillStyle = 'rgba(255,100,100,0.5)';
+  ctx.fillText('YOU', ux, uy - 7);
+
+  canvas.classList.add('visible');
+}
+
+// ── USER DOT ON WEBCAM FRAME ─────────────
+function drawUserDotOnCam(camLat, camLon, camBearing, userLat, userLon) {
+  const overlay = document.getElementById('cam-overlay');
+  let dc = document.getElementById('cam-dot-canvas');
+  if (!dc) {
+    dc = document.createElement('canvas');
+    dc.id = 'cam-dot-canvas';
+    dc.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;';
+    overlay.appendChild(dc);
+  }
+  dc.width  = window.innerWidth;
+  dc.height = window.innerHeight;
+  const ctx2 = dc.getContext('2d');
+
+  // Estimate horizontal position: ±35° from centre of 70° FOV
+  const toRad = d => d * Math.PI / 180;
+  const y2 = Math.sin(toRad(userLon-camLon)) * Math.cos(toRad(userLat));
+  const x2 = Math.cos(toRad(camLat))*Math.sin(toRad(userLat)) -
+              Math.sin(toRad(camLat))*Math.cos(toRad(userLat))*Math.cos(toRad(userLon-camLon));
+  const bearingToCam = (Math.atan2(y2,x2)*180/Math.PI + 360) % 360;
+  const rel = ((bearingToCam - camBearing + 540) % 360) - 180;
+  const xFrac = Math.max(0.08, Math.min(0.92, 0.5 + rel/70));
+  const W2 = dc.width, H2 = dc.height;
+  const dotX = W2 * xFrac;
+  const dotY = H2 * 0.54; // horizon
+
+  let ph = 0;
+  function anim() {
+    ctx2.clearRect(0,0,W2,H2);
+    const p = 0.5 + 0.5*Math.sin(ph); ph += 0.055;
+    const alpha = 0.5 + p*0.25;
+
+    ctx2.strokeStyle = `rgba(255,55,55,${alpha})`;
+    ctx2.lineWidth = 0.8;
+    ctx2.setLineDash([4,4]);
+    [[dotX-26,dotY,dotX-9,dotY],[dotX+9,dotY,dotX+26,dotY],
+     [dotX,dotY-26,dotX,dotY-9],[dotX,dotY+9,dotX,dotY+26]].forEach(([x1,y1,x2,y2]) => {
+      ctx2.beginPath(); ctx2.moveTo(x1,y1); ctx2.lineTo(x2,y2); ctx2.stroke();
+    });
+    ctx2.setLineDash([]);
+
+    ctx2.strokeStyle = `rgba(255,55,55,${(1-p)*0.55})`;
+    ctx2.lineWidth = 0.8;
+    ctx2.beginPath(); ctx2.arc(dotX,dotY,10+p*7,0,Math.PI*2); ctx2.stroke();
+
+    ctx2.fillStyle = `rgba(255,55,55,${0.7+p*0.3})`;
+    ctx2.beginPath(); ctx2.arc(dotX,dotY,3,0,Math.PI*2); ctx2.fill();
+
+    ctx2.fillStyle = `rgba(255,90,90,${0.45+p*0.2})`;
+    ctx2.font = '8px monospace';
+    ctx2.textAlign = 'left';
+    ctx2.fillText('YOU', dotX+12, dotY-12);
+
+    requestAnimationFrame(anim);
+  }
+  anim();
+}
+
+// ── AUTO-START ───────────────────────────
+document.getElementById('ambient-bar').classList.add('visible');
+setTimeout(finalize, 1200);
 
 </script>
 </body>
