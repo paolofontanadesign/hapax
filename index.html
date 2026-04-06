@@ -1115,87 +1115,103 @@ async function findAndShowWebcam() {
   const lat = state.ambient.lat || 45.40;
   const lon = state.ambient.lon || 11.87;
 
-  // 1. Query Windy directly via proxy — wider radius, best available
   let playerUrl = null;
-  let camName   = '';
+  let camTitle  = '';
+  let camLat    = null, camLon = null;
   let camDist   = null;
+  let camDir    = null;
 
+  // Query proxy — radius capped at 250 (Windy hard limit)
   try {
-    const res  = await fetch(`/api/webcams?lat=${lat}&lon=${lon}&radius=50000`);
+    const res  = await fetch(`/api/webcams?lat=${lat}&lon=${lon}`);
     const data = await res.json();
-    const webcams = data.webcams || [];
+    const webcams = (data.webcams || []).filter(w => w.status === 'active');
 
     if (webcams.length > 0) {
-      // Pick camera with highest score toward user position
-      // Windy doesn't give bearing so just take nearest
-      const w = webcams[0];
-      playerUrl = w.player?.day?.embed || w.player?.embed || null;
-      camName   = w.title || '';
-      // Rough distance from location field if available
-      if (w.location?.latitude && w.location?.longitude) {
-        const R = 6371000;
-        const dLat = (w.location.latitude - lat) * Math.PI / 180;
-        const dLon = (w.location.longitude - lon) * Math.PI / 180;
-        const a = Math.sin(dLat/2)**2 + Math.cos(lat*Math.PI/180)*Math.cos(w.location.latitude*Math.PI/180)*Math.sin(dLon/2)**2;
-        camDist = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-      }
-    }
-  } catch(e) { /* proxy not available locally */ }
+      // Score: prefer cameras whose title contains a direction word
+      // pointing roughly toward user, or just pick closest
+      const scored = webcams.map(w => {
+        let score = 0;
+        const t = (w.title || '').toLowerCase();
+        // Cardinal hints in title — crude but works for many Windy cams
+        if (w.location?.latitude && w.location?.longitude) {
+          const dLat = (w.location.latitude - lat) * Math.PI / 180;
+          const dLon = (w.location.longitude - lon) * Math.PI / 180;
+          const a = Math.sin(dLat/2)**2 +
+            Math.cos(lat*Math.PI/180)*Math.cos(w.location.latitude*Math.PI/180)*
+            Math.sin(dLon/2)**2;
+          const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          score -= d / 1000; // closer = better base score
+        }
+        // Boost if title mentions direction toward user
+        const bearToUser = bearing(w.location?.latitude||lat, w.location?.longitude||lon, lat, lon);
+        const dirs = { north:0, northeast:45, east:90, southeast:135,
+                       south:180, southwest:225, west:270, northwest:315,
+                       nord:0, est:90, sud:180, ovest:270 };
+        for (const [word, deg] of Object.entries(dirs)) {
+          if (t.includes(word)) {
+            const diff = Math.abs(((bearToUser - deg + 540) % 360) - 180);
+            if (diff < 60) score += 200;
+          }
+        }
+        return { w, score };
+      }).sort((a,b) => b.score - a.score);
 
-  // 2. Also check Overpass for cameras pointing at user (metadata only)
-  let bestOSM = null;
-  try {
-    const query = `[out:json][timeout:15];(
-      node["man_made"="surveillance"](around:2000,${lat},${lon});
-      node["tourism"="webcam"](around:2000,${lat},${lon});
-    );out body;`;
-    const res  = await fetch('https://overpass-api.de/api/interpreter',
-      { method: 'POST', body: query });
-    const data = await res.json();
-    const nodes = data.elements || [];
-    // Find best pointed at user
-    for (const n of nodes) {
-      const tags = n.tags || {};
-      const camDir = tags['camera:direction'] != null ? parseFloat(tags['camera:direction']) : null;
-      if (camDir === null) continue;
-      const fov = tags['camera:angle'] ? parseFloat(tags['camera:angle']) : 60;
-      const R = 6371000, r = d => d * Math.PI / 180;
-      const y = Math.sin(r(lon-n.lon))*Math.cos(r(lat));
-      const x = Math.cos(r(n.lat))*Math.sin(r(lat))-Math.sin(r(n.lat))*Math.cos(r(lat))*Math.cos(r(lon-n.lon));
-      const bearingFromCam = (Math.atan2(y,x)*180/Math.PI+360)%360;
-      const diff = ((bearingFromCam - camDir + 540) % 360) - 180;
-      if (Math.abs(diff) <= fov / 2) {
-        const dLat=(lat-n.lat)*Math.PI/180, dLon=(lon-n.lon)*Math.PI/180;
-        const a=Math.sin(dLat/2)**2+Math.cos(n.lat*Math.PI/180)*Math.cos(lat*Math.PI/180)*Math.sin(dLon/2)**2;
-        bestOSM = { name: tags.name||'camera', dist: Math.round(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))) };
-        break;
+      const best = scored[0].w;
+      playerUrl = best.player?.day?.embed || best.player?.embed || null;
+      camTitle  = best.title || '';
+      if (best.location?.latitude && best.location?.longitude) {
+        camLat = best.location.latitude;
+        camLon = best.location.longitude;
+        const dLat = (camLat - lat) * Math.PI / 180;
+        const dLon = (camLon - lon) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 +
+          Math.cos(lat*Math.PI/180)*Math.cos(camLat*Math.PI/180)*
+          Math.sin(dLon/2)**2;
+        camDist = Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+        // Bearing FROM camera TO user
+        camDir = Math.round(bearing(camLat, camLon, lat, lon));
       }
     }
   } catch(e) {}
 
-  // 3. Show overlay
+  if (!playerUrl) return; // nothing to show
+
   const overlay  = document.getElementById('cam-overlay');
   const camFrame = document.getElementById('cam-iframe');
   const label    = document.getElementById('cam-label');
   const now      = new Date();
-  const timeStr  = now.toTimeString().slice(0,8);
+  const pad = n => String(n).padStart(2,'0');
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const dateStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  const distStr = camDist
+    ? (camDist >= 1000 ? `${(camDist/1000).toFixed(1)}km` : `${camDist}m`)
+    : '—';
+  const dirLabel = camDir !== null
+    ? ['N','NE','E','SE','S','SW','W','NW'][Math.round(camDir/45)%8]
+    : '—';
 
-  if (playerUrl) {
-    camFrame.src = playerUrl;
-    const distStr = camDist ? `${camDist}m` : bestOSM ? `${bestOSM.dist}m` : '';
-    const nameStr = bestOSM ? bestOSM.name : camName;
-    label.textContent = [distStr, nameStr, timeStr].filter(Boolean).join('  ');
-    overlay.classList.add('visible');
-    startCRTFilter();
-  } else if (bestOSM) {
-    camFrame.src = '';
-    label.textContent = `no stream · ${bestOSM.dist}m · ${bestOSM.name}`;
-    overlay.classList.add('visible');
-    startCRTFilter();
-  }
+  label.textContent = [
+    `CAM  ${camTitle}`,
+    `DIST ${distStr}   DIR ${dirLabel} ${camDir !== null ? camDir+'°' : ''}`,
+    `LOC  ${(camLat||lat).toFixed(4)}° ${(camLon||lon).toFixed(4)}°`,
+    `UTC  ${dateStr} ${timeStr}`,
+  ].join('\n');
+
+  camFrame.src = playerUrl;
+  overlay.classList.add('visible');
+  startCRTFilter();
 }
 
-// ── CRT scanlines + noise canvas — runs continuously over the iframe ──
+function bearing(lat1, lon1, lat2, lon2) {
+  const r = d => d * Math.PI / 180;
+  const y = Math.sin(r(lon2-lon1)) * Math.cos(r(lat2));
+  const x = Math.cos(r(lat1)) * Math.sin(r(lat2)) -
+    Math.sin(r(lat1)) * Math.cos(r(lat2)) * Math.cos(r(lon2-lon1));
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// CRT filter — subtle, data readable
 let crtFrame = null;
 function startCRTFilter() {
   const canvas = document.getElementById('crt-canvas');
@@ -1213,38 +1229,34 @@ function startCRTFilter() {
     const W = canvas.width, H = canvas.height;
     ctx.clearRect(0, 0, W, H);
 
-    // Scanlines — alternating dark bands
-    for (let y = 0; y < H; y += 3) {
-      ctx.fillStyle = `rgba(0,0,0,${0.38 + Math.sin(tick * 0.01 + y * 0.05) * 0.04})`;
-      ctx.fillRect(0, y, W, 1.2);
+    // Scanlines — light, every 4px so video remains readable
+    for (let y = 0; y < H; y += 4) {
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillRect(0, y, W, 1);
     }
 
-    // Horizontal noise band — drifts slowly down
-    const bandY = ((tick * 0.7) % H);
-    const bandH = 2 + Math.random() * 4;
-    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.06})`;
-    ctx.fillRect(0, bandY, W, bandH);
+    // Single slow horizontal interference band
+    const bandY = ((tick * 0.4) % H);
+    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.025})`;
+    ctx.fillRect(0, bandY, W, 1 + Math.random() * 2);
 
-    // Pixel noise — random bright/dark flecks
-    const nPixels = Math.floor(W * H * 0.0006);
-    for (let i = 0; i < nPixels; i++) {
-      const px = Math.random() * W | 0;
-      const py = Math.random() * H | 0;
-      const v  = Math.random() > 0.5 ? 255 : 0;
-      ctx.fillStyle = `rgba(${v},${v*0.9|0},${v*0.7|0},${Math.random() * 0.18})`;
-      ctx.fillRect(px, py, 1, 1);
+    // Sparse pixel noise — very few, just enough to feel analogue
+    const nPx = Math.floor(W * H * 0.00012);
+    for (let i = 0; i < nPx; i++) {
+      const v = Math.random() > 0.5 ? 200 : 0;
+      ctx.fillStyle = `rgba(${v*0.7|0},${v}  ,${v*0.7|0},${Math.random() * 0.12})`;
+      ctx.fillRect(Math.random()*W|0, Math.random()*H|0, 1, 1);
     }
 
-    // Occasional vertical glitch bar
-    if (Math.random() < 0.012) {
-      const gx = Math.random() * W | 0;
-      const gw = 1 + Math.random() * 3 | 0;
-      ctx.fillStyle = `rgba(180,255,160,${Math.random() * 0.12})`;
-      ctx.fillRect(gx, 0, gw, H);
+    // Rare glitch — very occasional
+    if (Math.random() < 0.004) {
+      const gy = Math.random() * H | 0;
+      ctx.fillStyle = `rgba(140,255,140,${Math.random() * 0.06})`;
+      ctx.fillRect(0, gy, W, 1);
     }
 
-    // Phosphor glow tint — very subtle green cast on dark areas
-    ctx.fillStyle = `rgba(0,18,0,0.07)`;
+    // Subtle green phosphor wash — low opacity
+    ctx.fillStyle = 'rgba(0,10,0,0.04)';
     ctx.fillRect(0, 0, W, H);
 
     tick++;
