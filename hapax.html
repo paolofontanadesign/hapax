@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HAPAX</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Space+Mono:wght@400&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080808;
+    --fg: #e8e4dc;
+    --fg-dim: rgba(232, 228, 220, 0.35);
+    --fg-hint: rgba(232, 228, 220, 0.12);
+    --accent: rgba(232, 228, 220, 0.06);
+    --serif: 'EB Garamond', Georgia, serif;
+    --mono: 'Space Mono', monospace;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--serif);
+    overflow: hidden;
+  }
+
+  /* ── CANVAS LAYERS ── */
+  #stage {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%; height: 100%;
+  }
+
+
+  .panel {
+    pointer-events: all;
+    width: min(540px, 90vw);
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 1.2s ease, transform 1.2s ease;
+  }
+  .panel.visible { opacity: 1; transform: translateY(0); }
+  .panel.hidden  { opacity: 0; pointer-events: none; }
+
+  /* question panels */
+  .question-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+
+  .question-text {
+    font-size: clamp(20px, 3vw, 28px);
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--fg);
+    margin-bottom: 40px;
+    font-style: italic;
+  }
+
+  /* spatial input — a field to click */
+  #spatial-field .hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  /* crosshair lines */
+  #spatial-hx { height: 0.5px; left: 0; right: 0; transform: translateY(-50%); }
+  #output-timestamp {
+    font-size: clamp(11px, 1.5vw, 13px);
+    color: var(--fg-dim);
+    font-family: var(--mono);
+    letter-spacing: 0.08em;
+    line-height: 2;
+  }
+
+  /* ambient data overlay — large, centered, on top of field */
+  #hapax-footer {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    opacity: 0;
+    transition: opacity 3s ease 2s;
+    pointer-events: none;
+    z-index: 20;
+  }
+  #hapax-footer.visible { opacity: 1; }
+  #hapax-footer .footer-id {
+    font-family: var(--mono);
+    font-size: clamp(28px, 5vw, 52px);
+    letter-spacing: 0.32em;
+    color: rgba(232,228,220,0.92);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 28px;
+    font-weight: 400;
+  }
+  #hapax-footer .footer-meta {
+    font-family: var(--mono);
+    font-size: clamp(11px, 1.4vw, 15px);
+    letter-spacing: 0.16em;
+    color: rgba(232,228,220,0.52);
+    text-transform: uppercase;
+    line-height: 2.2;
+    white-space: pre;
+  }
+
+  /* progress dots */
+  #progress.visible { opacity: 1; }
+  .dot.active { background: var(--fg); transform: scale(1.4); }
+
+  /* ambient system info */
+  #ambient-bar {
+    position: fixed;
+    top: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 32px;
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 1.2s;
+    white-space: nowrap;
+  }
+  #ambient-bar.visible { opacity: 1; }
+
+  /* opening screen */
+  #intro {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: opacity 1.6s ease;
+  }
+  #intro.fade { opacity: 0; pointer-events: none; }
+
+  #intro-title {
+    font-family: var(--mono);
+    font-size: clamp(28px, 5vw, 42px);
+    letter-spacing: 0.32em;
+    color: var(--fg);
+    margin-bottom: 48px;
+    font-weight: 400;
+  }
+  #intro-sub {
+    font-family: var(--serif);
+    font-size: clamp(13px, 1.8vw, 16px);
+    color: var(--fg-dim);
+    font-style: italic;
+    text-align: center;
+    line-height: 1.7;
+    max-width: 360px;
+  }
+  #intro-cue {
+    position: absolute;
+    bottom: 40px;
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.2em;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    animation: pulse 2.8s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+
+  /* subtle grid on intro */
+  #intro::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,228,220,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,228,220,0.03) 1px, transparent 1px);
+    background-size: 80px 80px;
+    pointer-events: none;
+  }
+
+  /* ── WEBCAM TRIGGER ── */
+  #cam-trigger {
+    position: fixed;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 2s ease;
+    cursor: pointer;
+    pointer-events: none;
+  }
+  #cam-trigger.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+  #cam-trigger-text {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.28em;
+    color: rgba(232,228,220,0.35);
+    text-transform: uppercase;
+    animation: camPulse 3s ease-in-out infinite;
+  }
+  #cam-trigger:hover #cam-trigger-text {
+    color: rgba(232,228,220,0.8);
+  }
+  @keyframes camPulse {
+    0%,100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  /* ── WEBCAM OVERLAY ── */
+  #cam-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(4,4,10,0.92);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 1.2s ease;
+    backdrop-filter: blur(2px);
+  }
+  #cam-overlay.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+  #cam-overlay-inner {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    padding: 48px 32px 64px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  #cam-close {
+    position: fixed;
+    top: 24px;
+    right: 28px;
+    background: none;
+    border: 0.5px solid rgba(232,228,220,0.25);
+    color: rgba(232,228,220,0.6);
+    font-family: var(--mono);
+    font-size: 14px;
+    padding: 6px 12px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    transition: color 0.2s, border-color 0.2s;
+    z-index: 50;
+  }
+  #cam-close:hover {
+    color: rgba(232,228,220,1);
+    border-color: rgba(232,228,220,0.6);
+  }
+  #cam-status {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: rgba(232,228,220,0.35);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    min-height: 14px;
+  }
+  #cam-map {
+    width: 100%;
+    height: 260px;
+    margin-bottom: 20px;
+    border: 0.5px solid rgba(232,228,220,0.1);
+  }
+  #cam-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .cam-card {
+    border: 0.5px solid rgba(232,228,220,0.12);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+    background: rgba(232,228,220,0.03);
+  }
+  .cam-card:hover { border-color: rgba(232,228,220,0.35); }
+  .cam-card.best { border-color: rgba(232,228,220,0.28); }
+  .cam-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: rgba(232,228,220,0.85);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 8px;
+  }
+  .cam-meta {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: rgba(232,228,220,0.35);
+    text-transform: uppercase;
+    line-height: 2;
+  }
+  .cam-meta strong { color: rgba(232,228,220,0.65); }
+  .score-bar {
+    height: 1px;
+    background: rgba(232,228,220,0.08);
+    margin-top: 10px;
+    overflow: hidden;
+  }
+  .score-fill { height: 100%; }
+  .cam-player {
+    margin-top: 12px;
+    display: none;
+  }
+  .cam-player iframe {
+    width: 100%;
+    height: 220px;
+    border: none;
+    display: block;
+  }
+  .cam-player-msg {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: rgba(232,228,220,0.35);
+    text-transform: uppercase;
+    padding: 16px 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- canvas stage: three independent layers -->
+<div id="stage">
+  <canvas id="layer-synth"></canvas>
+</div>
+
+<!-- ambient data bar -->
+<div id="ambient-bar">
+  <span id="amb-time">--:--</span>
+  <span id="amb-loc">--</span>
+  <span id="amb-season">--</span>
+  <span id="amb-weather">--</span>
+</div>
+
+
+<!-- opening screen -->
+<div id="intro">
+  <div id="intro-title">HAPAX</div>
+  <div id="intro-sub">What happens now<br>will not happen again.</div>
+  <div id="intro-cue">touch to begin</div>
+</div>
+
+
+
+<!-- final footer -->
+<div id="hapax-footer">
+  <span class="footer-id">hapax</span>
+  <span class="footer-meta" id="footer-meta"></span>
+</div>
+
+<!-- webcam reveal trigger — appears after 30s -->
+<div id="cam-trigger">
+  <span id="cam-trigger-text">something is watching</span>
+</div>
+
+<!-- webcam overlay — full screen, over the field -->
+<div id="cam-overlay">
+  <div id="cam-overlay-inner">
+    <button id="cam-close">✕</button>
+    <div id="cam-status"></div>
+    <div id="cam-map"></div>
+    <div id="cam-list"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────
+const state = {
+  step: -1,
+  ambient: { hour: 0, minute: 0, season: 0, lat: 45, lon: 11, weather: null },
+};
+
+// ─────────────────────────────────────────
+// WEATHER — OpenWeatherMap free tier
+// Replace OWM_KEY with your API key from openweathermap.org
+// ─────────────────────────────────────────
+const OWM_KEY = 'YOUR_API_KEY_HERE';
+
+// weather condition → visual parameters
+// conditionCode: OWM main condition string
+function parseWeather(data) {
+  const main    = data.weather[0].main.toLowerCase(); // clear, clouds, rain, snow, mist, fog...
+  const temp    = data.main.temp;          // celsius
+  const humidity= data.main.humidity;     // 0–100
+  const pressure= data.main.pressure;     // hPa, typical 980–1040
+  const wind    = data.wind.speed;        // m/s
+
+  // density: how diffuse the visual field is
+  // clear=sharp, fog/mist=very diffuse, clouds=medium
+  const densityMap = {
+    clear: 0.0, clouds: 0.35, drizzle: 0.55,
+    rain: 0.65, thunderstorm: 0.75, snow: 0.6,
+    mist: 0.8, fog: 0.9, haze: 0.7, smoke: 0.7,
+  };
+  const density = densityMap[main] ?? 0.4;
+
+  // chromatic warmth: cold=-1 (grey-blue), warm=+1 (warm white)
+  // normalised roughly -20°C to +40°C → -1 to +1
+  const warmth = Math.max(-1, Math.min(1, (temp - 10) / 25));
+
+  // pressure tension: high pressure = stable geometry, low = expanding
+  // 1013 hPa = sea level standard. Range ~960–1040
+  const tension = (pressure - 980) / 60; // -0.55 to +1
+
+  // wind perturbation: 0 = still, 1 = very windy (>15 m/s)
+  const perturbation = Math.min(wind / 15, 1);
+
+  return { main, density, warmth, tension, perturbation, temp, humidity, wind, pressure };
+}
+
+async function fetchWeather(lat, lon) {
+  if (OWM_KEY === 'YOUR_API_KEY_HERE') {
+    // fallback: simulate neutral weather
+    state.ambient.weather = {
+      main: 'clear', density: 0.1, warmth: 0.2,
+      tension: 0.3, perturbation: 0.1,
+      temp: 18, humidity: 55, wind: 2, pressure: 1013,
+    };
+    updateWeatherBar();
+    return;
+  }
+  try {
+    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    state.ambient.weather = parseWeather(data);
+    updateWeatherBar();
+  } catch(e) {
+    state.ambient.weather = {
+      main: 'clear', density: 0.1, warmth: 0.2,
+      tension: 0.3, perturbation: 0.1,
+      temp: 18, humidity: 55, wind: 2, pressure: 1013,
+    };
+    updateWeatherBar();
+  }
+}
+
+function updateWeatherBar() {
+  const w = state.ambient.weather;
+  if (!w) return;
+  const el = document.getElementById('amb-weather');
+  if (el) el.textContent = `${w.main} · ${Math.round(w.temp)}°`;
+}
+
+// ─────────────────────────────────────────
+// AMBIENT INIT
+// ─────────────────────────────────────────
+function initAmbient() {
+  const now = new Date();
+  state.ambient.hour   = now.getHours();
+  state.ambient.minute = now.getMinutes();
+  const doy = (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+               Date.UTC(now.getFullYear(), 0, 0)) / 86400000;
+  state.ambient.season = doy / 365;
+
+  const seasons = ['winter','spring','summer','autumn'];
+  const si = Math.floor(((state.ambient.season + 0.125) % 1) * 4);
+
+  document.getElementById('amb-time').textContent =
+    String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('amb-season').textContent = seasons[si];
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      state.ambient.lat = pos.coords.latitude;
+      state.ambient.lon = pos.coords.longitude;
+      document.getElementById('amb-loc').textContent =
+        pos.coords.latitude.toFixed(2) + '° ' + pos.coords.longitude.toFixed(2) + '°';
+      // fetch weather once we have coordinates
+      fetchWeather(state.ambient.lat, state.ambient.lon);
+    }, () => {
+      document.getElementById('amb-loc').textContent = '45.40° 11.87°';
+      // fallback coords — Padova
+      fetchWeather(45.40, 11.87);
+    });
+  } else {
+    fetchWeather(45.40, 11.87);
+  }
+}
+
+// ─────────────────────────────────────────
+// CANVAS SETUP
+// ─────────────────────────────────────────
+function setupCanvas(id) {
+  const c = document.getElementById(id);
+  const resize = () => { c.width = window.innerWidth; c.height = window.innerHeight; };
+  resize();
+  window.addEventListener('resize', resize);
+  return c;
+}
+
+const cSynth   = setupCanvas('layer-synth');
+const ctxSynth = cSynth.getContext('2d');
+
+// ─────────────────────────────────────────
+// AMBIENT TIMING — derived from hour + season
+// slowness: 0 = noon midsummer (fast), 1 = 3am midwinter (slow)
+// ─────────────────────────────────────────
+function getAmbientTiming() {
+  const h = state.ambient.hour;
+  const s = state.ambient.season;
+  const w = state.ambient.weather || { density: 0.1, perturbation: 0.1 };
+
+  const todFactor    = Math.cos(((h - 3) / 24) * Math.PI * 2) * 0.5 + 0.5;
+  const seasonFactor = Math.cos((s - 0.5) * Math.PI * 2) * -0.5 + 0.5;
+  // heavy weather (fog, rain) adds up to 0.2 slowness
+  const weatherFactor = w.density * 0.2;
+
+  const slowness = todFactor * 0.55 + seasonFactor * 0.25 + weatherFactor;
+
+  return {
+    q1ToQ2:       1200 + slowness * 3600,
+    q2Floor:       500 + slowness * 2300,
+    q2DurationMult: 0.08 + slowness * 0.14,
+    q3ToOutput:    800 + slowness * 1600,
+    layerDelay:    100 + slowness * 400,
+  };
+}
+
+// ─────────────────────────────────────────
+// LAYER A — FIXED RULES (the immovable system)
+// ─────────────────────────────────────────
+
+// Derived constants from ambient (change each session but fixed per session)
+function getSystemConstants() {
+  const h = state.ambient.hour / 24;
+  const s = state.ambient.season;
+  const w = state.ambient.weather || { density: 0.1, warmth: 0.2, tension: 0.3, perturbation: 0.1 };
+
+  return {
+    gridN:       Math.floor(12 + h * 8),          // 12–20 grid divisions
+    baseFreq:    0.003 + s * 0.002,               // base wave frequency
+    phi:         (1 + Math.sqrt(5)) / 2,          // golden ratio — always
+    density:     0.4 + h * 0.2 + w.density * 0.4, // higher = more diffuse field
+    angle:       (s * Math.PI * 0.5) % Math.PI,   // field rotation by season
+    warmth:      w.warmth,       // -1 (cold/blue) to +1 (warm/white)
+    tension:     w.tension,      // pressure: -1 (expanding) to +1 (stable)
+    perturbation:w.perturbation, // wind: 0 (still) to 1 (turbulent)
+    weatherMain: w.main,
+  };
+}
+
+// ─────────────────────────────────────────
+// LAYER RENDERERS
+// ─────────────────────────────────────────
+
+// Layer C+A: SPACE — structural field grid
+
+// Layer B: LANGUAGE — rhythm and density field
+
+
+// ─────────────────────────────────────────
+// FLOW CONTROL
+// ─────────────────────────────────────────
+
+// ─────────────────────────────────────────
+// BUCOLICITY — spectrum axis 0=dystopian 1=pastoral
+// ─────────────────────────────────────────
+function computeBucolicity() {
+  const w = state.ambient.weather || { density: 0.15, warmth: 0.3 };
+  const h = state.ambient.hour;
+  const s = state.ambient.season;
+  const lat = Math.abs(state.ambient.lat || 45);
+
+  const clarity  = 1 - (w.density || 0.15);
+  const warmth   = ((w.warmth || 0) + 1) / 2;
+  const daylight = (h >= 5 && h <= 21) ? 1 - Math.abs(h - 13) / 14 : 0;
+  const season   = Math.max(0, Math.sin(s * Math.PI));
+  const latFactor = 1 - lat / 90;
+
+  return Math.max(0, Math.min(1,
+    clarity * 0.30 + warmth * 0.20 + daylight * 0.25 +
+    season * 0.15 + latFactor * 0.10
+  ));
+}
+
+function computeSeed() {
+  const now = new Date();
+  return Math.round(
+    now.getFullYear() * 1000 +
+    now.getMonth()    * 100  +
+    now.getDate()     * 10   +
+    now.getHours()    * 0.5  +
+    Math.round(now.getMinutes() / 5) +
+    (state.ambient.lat || 45) * 7.3  +
+    (state.ambient.lon || 11) * 3.1  +
+    ((state.ambient.weather && state.ambient.weather.pressure) || 1013) * 0.01
+  );
+}
+
+function seededRand(seed) {
+  let s = seed | 0;
+  return function() {
+    s = (Math.imul(s, 1664525) + 1013904223) | 0;
+    return (s >>> 0) / 4294967296;
+  };
+}
+
+// ─────────────────────────────────────────
+// PARTICLE FIELD — the mathematical signature of the moment
+// 40,000 points following curl noise derived entirely from inputs
+// No illustration. Pure structure.
+// ─────────────────────────────────────────
+const N_PART = 80000;
+let pX, pY, pVX, pVY;
+let fBuf, fW, fH;
+let partAnimFrame = null;
+let fieldParams   = null;
+
+function buildFieldParams(bucolicity, seed) {
+  const r = seededRand(seed);
+  const w = state.ambient.weather || { perturbation: 0.1, tension: 0.3 };
+  const h = state.ambient.hour / 24;
+  const s = state.ambient.season;
+  const lat = (state.ambient.lat || 45) / 90;
+  const lon = (state.ambient.lon || 11) / 180;
+
+  const a = 1.4 + r() * 1.2 + s * 0.8;
+  const b = 1.1 + r() * 1.4 + h * 0.5;
+  const c = r() * Math.PI * 2 + lat * Math.PI * 3;
+  const d = r() * Math.PI * 2 + lon * Math.PI * 3;
+  const e = s * Math.PI * 4;
+  const f = 0.4 + r() * 0.6;
+  const g = 0.8 + r() * 0.8;
+
+  const nV = 3 + Math.round(r() * 2);
+  const vortices = Array.from({length: nV}, () => ({
+    cx: r() * 2 - 1, cy: r() * 2 - 1,
+    s:  (r() > 0.5 ? 1 : -1) * (0.004 + r() * 0.012),
+    r2min: 0.008 + r() * 0.04,
+  }));
+
+  const warm = [
+    [8,3,0],[48,16,0],[110,42,0],
+    [200,95,10],[248,180,55],[255,235,140],[255,252,230]
+  ];
+  const cold = [
+    [0,2,10],[4,8,35],[12,22,90],
+    [28,55,180],[60,110,240],[130,175,255],[220,235,255]
+  ];
+  const lime = [
+    [2,4,8],[8,14,22],[20,38,55],
+    [40,90,80],[80,160,120],[160,230,190],[235,255,245]
+  ];
+
+  const brightness = 14 + (w.perturbation || 0.1) * 30;
+  const fade  = 0.974 + bucolicity * 0.010;
+  const speed = bucolicity > 0.5
+    ? 0.003 + (1 - bucolicity) * 0.003
+    : 0.005  + (1 - bucolicity) * 0.007;
+
+  return { a, b, c, d, e, f, g, bucolicity, speed, fade,
+           brightness, vortices, warm, cold, lime,
+           spX: 0.5 + lon * 0.3, spY: 0.5 + lat * 0.2 };
+}
+
+function curl(nx, ny, p) {
+  // Curl noise: divergence-free 2D vector field
+  // Creates smooth, non-converging flow — no sinks or sources
+  const { a, b, c, d, e, f, g, bucolicity, speed } = p;
+
+  // Potential scalar field ψ
+  const psi = Math.sin(a * nx + b * ny + c)
+            + f * Math.cos(g * ny - a * nx + d)
+            + 0.3 * Math.sin(e * nx * ny + c * 0.5);
+
+  // Gradient of ψ (numerical) → perpendicular = curl
+  const eps = 0.02;
+  const psi_dx = (Math.sin(a*(nx+eps) + b*ny + c)
+               + f*Math.cos(g*ny - a*(nx+eps) + d)
+               + 0.3*Math.sin(e*(nx+eps)*ny + c*0.5)) - psi;
+  const psi_dy = (Math.sin(a*nx + b*(ny+eps) + c)
+               + f*Math.cos(g*(ny+eps) - a*nx + d)
+               + 0.3*Math.sin(e*nx*(ny+eps) + c*0.5)) - psi;
+
+  // Curl: rotate gradient 90°
+  let fx = -psi_dy / eps * speed;
+  let fy =  psi_dx / eps * speed;
+
+  // Vortex contributions — spiral arms and galaxy-like structures
+  if (p.vortices) {
+    for (const v of p.vortices) {
+      const dx = nx - v.cx, dy = ny - v.cy;
+      const r2 = dx*dx + dy*dy;
+      const str = v.s / (r2 + v.r2min);
+      fx += -dy * str;
+      fy +=  dx * str;
+    }
+  }
+
+  if (bucolicity < 0.5) {
+    // Dystopian: add attractor pull toward spatial input
+    const dyst = 1 - bucolicity;
+    const ax = p.spX * 2 - 1;
+    const ay = p.spY * 2 - 1;
+    const dx = nx - ax, dy = ny - ay;
+    const r2 = dx*dx + dy*dy;
+    const pull = dyst * 0.006 / (r2 + 0.08);
+    fx += -dx * pull;
+    fy += -dy * pull;
+
+    // Extra turbulence
+    fx += Math.sin(b * ny * 3 + d) * 0.0018 * dyst;
+    fy += Math.cos(a * nx * 3 + c) * 0.0018 * dyst;
+  }
+
+  return [fx, fy];
+}
+
+function initParticleField(W, H, bucolicity, seed) {
+  pX  = new Float32Array(N_PART);
+  pY  = new Float32Array(N_PART);
+  pVX = new Float32Array(N_PART);
+  pVY = new Float32Array(N_PART);
+  fBuf = new Uint8ClampedArray(W * H * 4);
+  fW = W; fH = H;
+  // alpha = 255 everywhere
+  for (let i = 3; i < fBuf.length; i += 4) fBuf[i] = 255;
+
+  const r = seededRand(seed + 333);
+  if (bucolicity > 0.5) {
+    // Pastoral: even distribution across field
+    for (let i = 0; i < N_PART; i++) {
+      pX[i] = r() * W;
+      pY[i] = r() * H;
+    }
+  } else {
+    // Dystopian: 3–5 dense seed clusters
+    const nc = 3 + Math.round(r() * 2);
+    const cx = Array.from({length: nc}, () => r() * W);
+    const cy = Array.from({length: nc}, () => r() * H);
+    for (let i = 0; i < N_PART; i++) {
+      const c = Math.floor(r() * nc);
+      pX[i] = cx[c] + (r() - 0.5) * W * 0.18;
+      pY[i] = cy[c] + (r() - 0.5) * H * 0.18;
+    }
+  }
+}
+
+function tickParticles() {
+  const p = fieldParams;
+  const W = fW, H = fH;
+  const { fade, brightness, bucolicity, warm, cold, lime } = p;
+
+  // 1. Fade buffer toward black
+  for (let i = 0; i < fBuf.length; i += 4) {
+    fBuf[i]   = fBuf[i]   * fade | 0;
+    fBuf[i+1] = fBuf[i+1] * fade | 0;
+    fBuf[i+2] = fBuf[i+2] * fade | 0;
+  }
+
+  // 2. Update + render each particle with velocity-based colour
+  for (let i = 0; i < N_PART; i++) {
+    const nx = pX[i] / W * 2 - 1;
+    const ny = pY[i] / H * 2 - 1;
+    const [fx, fy] = curl(nx, ny, p);
+
+    pVX[i] = pVX[i] * 0.88 + fx;
+    pVY[i] = pVY[i] * 0.88 + fy;
+    pX[i] += pVX[i] * W * 0.5;
+    pY[i] += pVY[i] * H * 0.5;
+
+    // Boundary
+    if (bucolicity > 0.5) {
+      if (pX[i] < 0) pX[i] += W; else if (pX[i] >= W) pX[i] -= W;
+      if (pY[i] < 0) pY[i] += H; else if (pY[i] >= H) pY[i] -= H;
+    } else {
+      if (pX[i] < -W*0.1 || pX[i] > W*1.1 || pY[i] < -H*0.1 || pY[i] > H*1.1) {
+        pX[i] = W*(0.25+Math.random()*0.5); pY[i] = H*(0.25+Math.random()*0.5);
+        pVX[i] = 0; pVY[i] = 0; continue;
+      }
+    }
+
+    // Speed → palette index 0–6
+    const spd  = Math.sqrt(pVX[i]*pVX[i] + pVY[i]*pVY[i]) * W;
+    const pidx = Math.min(spd * 0.3, 5.99);
+    const pi   = pidx | 0;
+    const pt   = pidx - pi;
+
+    // Interpolate colour within each palette stop
+    function lerp3(pal) {
+      return [
+        pal[pi][0] + (pal[pi+1][0]-pal[pi][0])*pt,
+        pal[pi][1] + (pal[pi+1][1]-pal[pi][1])*pt,
+        pal[pi][2] + (pal[pi+1][2]-pal[pi][2])*pt,
+      ];
+    }
+    const wc = lerp3(warm), cc = lerp3(cold), lc = lerp3(lime);
+    const bw = bucolicity, bc = 1-bucolicity;
+    const bl = 1 - Math.abs(bw-0.5)*2;
+
+    // Mix palettes by bucolicity
+    const baseR = wc[0]*bw   + cc[0]*bc*0.6 + lc[0]*bl*0.4;
+    const baseG = wc[1]*bw   + cc[1]*bc*0.6 + lc[1]*bl*0.4;
+    const baseB = wc[2]*bw*0.5 + cc[2]*bc   + lc[2]*bl*0.4;
+
+    // Brightness scales with speed
+    const bright = brightness * (0.4 + pidx * 0.1);
+    const rV = baseR/255*bright | 0;
+    const gV = baseG/255*bright | 0;
+    const bV = baseB/255*bright | 0;
+
+    const bx = pX[i]|0, by = pY[i]|0;
+
+    if (pidx > 3.2) {
+      // BLOOM — 5×5 Gaussian for fast/bright particles
+      const K = [
+        0.03,0.07,0.10,0.07,0.03,
+        0.07,0.20,0.30,0.20,0.07,
+        0.10,0.30,1.00,0.30,0.10,
+        0.07,0.20,0.30,0.20,0.07,
+        0.03,0.07,0.10,0.07,0.03,
+      ];
+      for (let ky=0; ky<5; ky++) for (let kx=0; kx<5; kx++) {
+        const nx2=bx+kx-2, ny2=by+ky-2;
+        if (nx2<0||nx2>=W||ny2<0||ny2>=H) continue;
+        const w=K[ky*5+kx], idx=(ny2*W+nx2)*4;
+        fBuf[idx]  =Math.min(255,fBuf[idx]  +(rV*w|0));
+        fBuf[idx+1]=Math.min(255,fBuf[idx+1]+(gV*w|0));
+        fBuf[idx+2]=Math.min(255,fBuf[idx+2]+(bV*w|0));
+      }
+    } else {
+      // 3×3 soft kernel for slow particles
+      for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
+        const nx2=bx+dx, ny2=by+dy;
+        if (nx2<0||nx2>=W||ny2<0||ny2>=H) continue;
+        const w=(dx===0&&dy===0)?1:(Math.abs(dx)+Math.abs(dy)===1)?0.3:0.08;
+        const idx=(ny2*W+nx2)*4;
+        fBuf[idx]  =Math.min(255,fBuf[idx]  +(rV*w|0));
+        fBuf[idx+1]=Math.min(255,fBuf[idx+1]+(gV*w|0));
+        fBuf[idx+2]=Math.min(255,fBuf[idx+2]+(bV*w|0));
+      }
+    }
+  }
+
+  // 3. Write to canvas
+  const img = ctxSynth.createImageData(W, H);
+  img.data.set(fBuf);
+  ctxSynth.putImageData(img, 0, 0);
+}
+
+function animateParticles() {
+  tickParticles();
+  partAnimFrame = requestAnimationFrame(animateParticles);
+}
+
+// ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// SOUND — fully modulated, bucolicity-driven
+// Every value shifts continuously. Nothing stays still.
+// ─────────────────────────────────────────
+let soundCtx = null;
+let soundNodes = {};
+
+function startAmbientSound(bucolicity, seed) {
+  try { soundCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch(e) { return; }
+
+  const ctx = soundCtx;
+  const r   = seededRand(seed + 9999);
+  const b   = bucolicity;
+  const now = ctx.currentTime;
+
+  // Master — slow fade in over 6s
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, now);
+  master.gain.linearRampToValueAtTime(0.35, now + 6);
+  master.connect(ctx.destination);
+
+  // Base frequency: latitude-derived
+  const rootHz = 36 + (state.ambient.lat || 45) * 0.4 + r() * 8;
+
+  // ── REVERB (convolution approximated with delay network) ──
+  function makeReverb(wet) {
+    const delay1 = ctx.createDelay(2); delay1.delayTime.value = 0.38 + r()*0.2;
+    const delay2 = ctx.createDelay(2); delay2.delayTime.value = 0.55 + r()*0.3;
+    const fbGain = ctx.createGain(); fbGain.gain.value = 0.42;
+    const wetG   = ctx.createGain(); wetG.gain.value = wet;
+    delay1.connect(delay2); delay2.connect(fbGain);
+    fbGain.connect(delay1); delay1.connect(wetG);
+    return { input: delay1, output: wetG };
+  }
+  const reverb = makeReverb(0.55 + b * 0.25);
+  reverb.output.connect(master);
+
+  // ── SLOW MASTER LFO (0.02–0.07 Hz) — shapes everything ──
+  const masterLfo = ctx.createOscillator();
+  masterLfo.frequency.value = 0.02 + r() * 0.05;
+  const masterLfoG = ctx.createGain();
+  masterLfoG.gain.value = 1;
+  masterLfo.connect(masterLfoG);
+  masterLfo.start();
+
+  // ── HARMONIC STACK — Fibonacci series on rootHz ──
+  // pastoral: full warm stack; dystopian: sparse cold intervals
+  const harmonics = b > 0.5
+    ? [1, 2, 3, 5, 8, 13, 21]          // pastoral: full overtone series
+    : [1, 1.5, 2.07, 3.14, 4.67];      // dystopian: inharmonic
+
+  const hGain = ctx.createGain();
+  hGain.gain.value = 0.7;
+  hGain.connect(reverb.input);
+  hGain.connect(master);
+
+  harmonics.forEach((ratio, i) => {
+    const freq = rootHz * ratio;
+    if (freq > 16000) return;
+
+    const osc = ctx.createOscillator();
+    osc.type = b > 0.5 ? 'sine' : (i % 2 === 0 ? 'sine' : 'triangle');
+    // Micro-detune: each oscillator slightly off-center → beating
+    osc.frequency.value = freq * (1 + (r() - 0.5) * 0.006);
+
+    // Vibrato — faster and wider for dystopian
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 2.5 + r() * 4 + (1-b) * 3;
+    const vibG = ctx.createGain();
+    vibG.gain.value = freq * (0.002 + (1-b) * 0.004);
+    vib.connect(vibG); vibG.connect(osc.frequency);
+    vib.start();
+
+    // Amplitude envelope — each harmonic breathes independently
+    const envG = ctx.createGain();
+    const baseAmp = [0.7, 0.45, 0.28, 0.18, 0.11, 0.06, 0.03][i] || 0.02;
+    envG.gain.setValueAtTime(0, now);
+    envG.gain.linearRampToValueAtTime(baseAmp, now + 4 + r() * 4);
+
+    // LFO amplitude modulation — each harmonic trembles at its own rate
+    const ampLfo = ctx.createOscillator();
+    ampLfo.frequency.value = 0.05 + r() * 0.2 + (1-b) * 0.3;
+    const ampLfoG = ctx.createGain();
+    ampLfoG.gain.value = baseAmp * (0.15 + (1-b) * 0.25);
+    ampLfo.connect(ampLfoG);
+    ampLfoG.connect(envG.gain);
+    ampLfo.start();
+
+    osc.connect(envG); envG.connect(hGain);
+    osc.start();
+  });
+
+  // ── FILTER SWEEP — opens and closes over time ──
+  const filt = ctx.createBiquadFilter();
+  filt.type = 'lowpass';
+  filt.frequency.value = b > 0.5 ? 1200 : 400;
+  filt.Q.value = 1.4;
+
+  const filtLfo = ctx.createOscillator();
+  filtLfo.frequency.value = 0.03 + r() * 0.04;
+  const filtLfoG = ctx.createGain();
+  // pastoral: filter opens wide; dystopian: tight dark sweep
+  filtLfoG.gain.value = b > 0.5 ? 800 : 200;
+  filtLfo.connect(filtLfoG); filtLfoG.connect(filt.frequency);
+  filtLfo.start();
+
+  // Connect hGain through filter for coloured output
+  // (hGain already connected directly for high-freq content)
+  // Extra filtered copy at lower level
+  const filtCopy = ctx.createGain(); filtCopy.gain.value = 0.4;
+  hGain.connect(filt); filt.connect(filtCopy); filtCopy.connect(master);
+
+  // ── NOISE TEXTURE ──
+  const noiseLen = ctx.sampleRate * 3;
+  const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+  const nd = noiseBuf.getChannelData(0);
+  for (let i = 0; i < noiseLen; i++) nd[i] = Math.random()*2-1;
+
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuf; noise.loop = true;
+
+  const nFilt = ctx.createBiquadFilter();
+  // pastoral: gentle wind (low); dystopian: industrial hiss (high-mid)
+  nFilt.type = b > 0.5 ? 'lowpass' : 'bandpass';
+  nFilt.frequency.value = b > 0.5 ? 180 + b*200 : 800 + (1-b)*1200;
+  nFilt.Q.value = b > 0.5 ? 0.5 : 2.5;
+
+  const nGain = ctx.createGain();
+  nGain.gain.setValueAtTime(0, now);
+  nGain.gain.linearRampToValueAtTime(
+    b > 0.5 ? 0.012 + b*0.008 : 0.018 + (1-b)*0.025,
+    now + 8
+  );
+
+  // Noise amplitude modulated by masterLfo
+  const nModG = ctx.createGain(); nModG.gain.value = 0.004;
+  masterLfoG.connect(nModG); nModG.connect(nGain.gain);
+
+  noise.connect(nFilt); nFilt.connect(nGain); nGain.connect(reverb.input);
+  noise.start();
+
+  // ── DYSTOPIAN ONLY: sub-bass pulse + metallic hits ──
+  if (b < 0.7) {
+    const dyst = 1 - b;
+
+    // Sub-bass: sine + triangle pair, beating slowly
+    const subG = ctx.createGain();
+    subG.gain.setValueAtTime(0, now);
+    subG.gain.linearRampToValueAtTime(dyst * 0.5, now + 7);
+    subG.connect(master);
+
+    [rootHz * 0.5, rootHz * 0.504].forEach(f => {
+      const s = ctx.createOscillator(); s.type = 'sine';
+      s.frequency.value = f; s.connect(subG); s.start();
+    });
+
+    // Sub LFO pulse (0.5–1.5 Hz) — heartbeat rhythm
+    const subLfo = ctx.createOscillator();
+    subLfo.frequency.value = 0.5 + dyst * r();
+    const subLfoG = ctx.createGain(); subLfoG.gain.value = dyst * 0.3;
+    subLfo.connect(subLfoG); subLfoG.connect(subG.gain);
+    subLfo.start();
+
+    // Metallic impact: scheduled randomly, varies in pitch and delay
+    function scheduleHit() {
+      if (!soundCtx || soundCtx.state === 'closed') return;
+      try {
+        const t = ctx.currentTime;
+        // Short metallic transient: exponential decay
+        const hitF = 55 + r() * 180;
+        const imp = ctx.createOscillator();
+        imp.type = 'sawtooth';
+        imp.frequency.setValueAtTime(hitF * 3, t);
+        imp.frequency.exponentialRampToValueAtTime(hitF * 0.4, t + 0.6);
+        const impG = ctx.createGain();
+        impG.gain.setValueAtTime(dyst * 0.22, t);
+        impG.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+        const impFilt = ctx.createBiquadFilter();
+        impFilt.type = 'bandpass'; impFilt.frequency.value = hitF * 2; impFilt.Q.value = 5;
+        imp.connect(impFilt); impFilt.connect(impG); impG.connect(reverb.input);
+        imp.start(t); imp.stop(t + 1);
+      } catch(e) {}
+      setTimeout(scheduleHit, (2000 + r() * 8000) / dyst);
+    }
+    setTimeout(scheduleHit, 2000 + r() * 3000);
+  }
+
+  // ── PASTORAL ONLY: high harmonic shimmer ──
+  if (b > 0.4) {
+    const shimG = ctx.createGain();
+    shimG.gain.setValueAtTime(0, now);
+    shimG.gain.linearRampToValueAtTime((b-0.4) * 0.06, now + 10);
+    shimG.connect(reverb.input);
+
+    // Very high sine waves: Turrell-like luminous frequencies
+    [rootHz*13, rootHz*21, rootHz*34].forEach((f, i) => {
+      if (f > 16000) return;
+      const s = ctx.createOscillator(); s.type = 'sine';
+      s.frequency.value = f * (1 + (r()-0.5)*0.003);
+      const sg = ctx.createGain(); sg.gain.value = [0.6,0.35,0.18][i];
+      // Each shimmer oscillator has its own slow AM
+      const sLfo = ctx.createOscillator();
+      sLfo.frequency.value = 0.08 + r()*0.15;
+      const sLfoG = ctx.createGain(); sLfoG.gain.value = 0.4;
+      sLfo.connect(sLfoG); sLfoG.connect(sg.gain);
+      sLfo.start();
+      s.connect(sg); sg.connect(shimG); s.start();
+    });
+  }
+}
+// ─────────────────────────────────────────
+// FINALIZE — the field emerges
+// ─────────────────────────────────────────
+function finalize() {
+  const bucolicity = computeBucolicity();
+  const seed       = computeSeed();
+
+  // Cap canvas resolution for performance
+  const W = Math.min(window.innerWidth,  1440);
+  const H = Math.min(window.innerHeight, 900);
+  cSynth.width  = W; cSynth.height = H;
+  cSynth.style.width  = window.innerWidth  + 'px';
+  cSynth.style.height = window.innerHeight + 'px';
+
+  fieldParams = buildFieldParams(bucolicity, seed);
+  initParticleField(W, H, bucolicity, seed);
+
+  // Bring synth canvas to front, full opacity
+  const synthEl = document.getElementById('layer-synth');
+  synthEl.style.mixBlendMode = 'normal';
+  synthEl.style.zIndex       = '10';
+  synthEl.style.transition   = 'opacity 2.5s ease';
+
+  // Start particle loop
+  animateParticles();
+  setTimeout(() => { synthEl.style.opacity = '1'; }, 80);
+
+  // Sound — slightly delayed so visual leads
+  setTimeout(() => startAmbientSound(bucolicity, seed), 1200);
+
+  // Footer
+  const now   = new Date();
+  const ts    = now.toISOString().replace('T',' ').substring(0, 16);
+  const lat   = (state.ambient.lat || 45.40).toFixed(3);
+  const lon   = (state.ambient.lon || 11.87).toFixed(3);
+  const wMain = state.ambient.weather ? state.ambient.weather.main : '';
+  const wTemp = state.ambient.weather ? `${Math.round(state.ambient.weather.temp)}°c` : '';
+  const wWind = state.ambient.weather ? `${Math.round(state.ambient.weather.wind)} m/s` : '';
+  const label = bucolicity > 0.68 ? 'pastoral'
+              : bucolicity > 0.38 ? 'liminal'
+              : 'nocturnal';
+
+  const metaLines = [
+    ts,
+    `${lat}°  ${lon}°`,
+    wMain ? `${wMain}  ${wTemp}  ${wWind}` : '',
+    `${label}  ·  ${(bucolicity * 100).toFixed(0)}%`,
+  ].filter(Boolean).join('\n');
+
+  document.getElementById('footer-meta').textContent = metaLines;
+
+  setTimeout(() => {
+    document.getElementById('hapax-footer').classList.add('visible');
+  }, 1800);
+
+  // Auto-reveal "something is watching" after 30s
+  setTimeout(showCamTrigger, 30000);
+}
+// ─────────────────────────────────────────
+// INTRO — start
+// ─────────────────────────────────────────
+const intro = document.getElementById('intro');
+intro.addEventListener('click', () => {
+  intro.classList.add('fade');
+  document.getElementById('ambient-bar').classList.add('visible');
+  setTimeout(() => {
+    intro.style.display = 'none';
+    // Wait briefly for ambient data, then generate
+    setTimeout(finalize, 800);
+  }, 1600);
+});
+
+// ─────────────────────────────────────────
+// WEBCAM LAYER — reveals after field settles
+// ─────────────────────────────────────────
+let camMap = null, camMapInitialized = false;
+let camActiveCard = null;
+
+function haversine(lat1, lng1, lat2, lng2) {
+  const R = 6371000, r = d => d * Math.PI / 180;
+  const a = Math.sin(r(lat2-lat1)/2)**2 +
+    Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(r(lng2-lng1)/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function bearing(lat1, lng1, lat2, lng2) {
+  const r = d => d * Math.PI / 180;
+  const y = Math.sin(r(lng2-lng1)) * Math.cos(r(lat2));
+  const x = Math.cos(r(lat1)) * Math.sin(r(lat2)) -
+    Math.sin(r(lat1)) * Math.cos(r(lat2)) * Math.cos(r(lng2-lng1));
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+function dirLabel(deg) {
+  return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg/45)%8];
+}
+
+function showCamTrigger() {
+  const t = document.getElementById('cam-trigger');
+  t.classList.add('visible');
+  t.addEventListener('click', openCamOverlay, { once: true });
+}
+
+function openCamOverlay() {
+  const overlay = document.getElementById('cam-overlay');
+  overlay.classList.add('visible');
+  document.getElementById('cam-trigger').classList.remove('visible');
+  if (!camMapInitialized) initCamMap();
+  runCamSearch();
+}
+
+function closeCamOverlay() {
+  document.getElementById('cam-overlay').classList.remove('visible');
+  // Trigger re-appears after 10s in case user wants to go back
+  setTimeout(showCamTrigger, 10000);
+}
+
+function initCamMap() {
+  const lat = state.ambient.lat || 45.40;
+  const lon = state.ambient.lon || 11.87;
+  camMap = L.map('cam-map', { zoomControl: true, attributionControl: false });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { maxZoom: 19 }).addTo(camMap);
+  camMap.setView([lat, lon], 15);
+  L.circleMarker([lat, lon], {
+    radius: 7, color: '#e8e4dc', fillColor: '#e8e4dc',
+    fillOpacity: 0.9, weight: 1
+  }).addTo(camMap).bindPopup('you are here');
+  camMapInitialized = true;
+}
+
+async function runCamSearch() {
+  const lat = state.ambient.lat || 45.40;
+  const lon = state.ambient.lon || 11.87;
+  const radius = 600;
+
+  setCamStatus('querying overpass...');
+
+  const query = `[out:json][timeout:30];(
+    node["man_made"="surveillance"](around:${radius},${lat},${lon});
+    node["tourism"="webcam"](around:${radius},${lat},${lon});
+    node["man_made"="webcam"](around:${radius},${lat},${lon});
+  );out body;`;
+
+  let nodes = [];
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter',
+      { method: 'POST', body: query });
+    const data = await res.json();
+    nodes = data.elements || [];
+  } catch(e) {
+    setCamStatus('overpass unavailable');
+    return;
+  }
+
+  if (nodes.length === 0) {
+    setCamStatus('no cameras mapped in this area');
+    return;
+  }
+
+  setCamStatus(`${nodes.length} camera${nodes.length > 1 ? 's' : ''} found`);
+
+  const cams = nodes.map(n => {
+    const tags = n.tags || {};
+    const dist = Math.round(haversine(lat, lon, n.lat, n.lon));
+    const camDir = tags['camera:direction'] != null ? parseFloat(tags['camera:direction']) : null;
+    const fov = tags['camera:angle'] ? parseFloat(tags['camera:angle'])
+              : tags['camera:type'] === 'dome' ? 360 : 60;
+    const bearingFromCam = (bearing(lat, lon, n.lat, n.lon) + 180) % 360;
+    let inFOV = null;
+    if (camDir !== null) {
+      const diff = ((bearingFromCam - camDir + 540) % 360) - 180;
+      inFOV = Math.abs(diff) <= fov / 2;
+    }
+    const name = tags.name || tags['surveillance:type'] || tags['camera:type'] || 'camera';
+    const score = (inFOV === true ? 55 : inFOV === null ? 20 : 0) +
+                  Math.max(0, 45 - dist/15);
+    return { lat: n.lat, lon: n.lon, dist, camDir, fov, inFOV, name,
+             score: Math.round(Math.min(100, score)), id: n.id,
+             directUrl: tags['contact:webcam'] || tags.url || null };
+  }).sort((a,b) => b.score - a.score);
+
+  renderCams(cams, lat, lon);
+}
+
+function renderCams(cams, myLat, myLon) {
+  const list = document.getElementById('cam-list');
+  list.innerHTML = '';
+
+  cams.forEach((c, i) => {
+    // Map marker
+    const col = c.score >= 60 ? '#e8e4dc' : 'rgba(232,228,220,0.4)';
+    L.circleMarker([c.lat, c.lon], {
+      radius: 5, color: col, fillColor: col,
+      fillOpacity: 0.85, weight: 1
+    }).addTo(camMap).bindPopup(c.name);
+
+    // Draw FOV cone if direction known
+    if (c.camDir !== null) {
+      const rad = c.camDir * Math.PI / 180;
+      const fovR = (c.fov / 2) * Math.PI / 180;
+      const d = 0.0015;
+      L.polygon([
+        [c.lat, c.lon],
+        [c.lat + d*Math.cos(rad-fovR), c.lon + d*Math.sin(rad-fovR)],
+        [c.lat + d*Math.cos(rad+fovR), c.lon + d*Math.sin(rad+fovR)]
+      ], { color: col, fillColor: col, fillOpacity: 0.07, weight: 0.5 }).addTo(camMap);
+    }
+
+    // Card
+    const card = document.createElement('div');
+    card.className = 'cam-card' + (i === 0 ? ' best' : '');
+
+    const fovStr = c.inFOV === true ? 'in fov' : c.inFOV === false ? 'outside fov' : 'fov unknown';
+    const dirStr = c.camDir !== null ? `${Math.round(c.camDir)}° ${dirLabel(c.camDir)}` : '—';
+    const scoreCol = c.score >= 60 ? 'rgba(232,228,220,0.8)' : 'rgba(232,228,220,0.3)';
+
+    const playerDiv = document.createElement('div');
+    playerDiv.className = 'cam-player';
+
+    card.innerHTML = `
+      <span class="cam-name">${c.name}</span>
+      <div class="cam-meta">
+        <span>dist <strong>${c.dist}m</strong></span> &nbsp;
+        <span>dir <strong>${dirStr}</strong></span> &nbsp;
+        <span><strong>${fovStr}</strong></span>
+      </div>
+      <div class="score-bar">
+        <div class="score-fill" style="width:${c.score}%;background:${scoreCol};"></div>
+      </div>
+    `;
+    card.appendChild(playerDiv);
+
+    card.addEventListener('click', async () => {
+      if (camActiveCard === card) {
+        playerDiv.style.display = 'none';
+        camActiveCard = null;
+        return;
+      }
+      if (camActiveCard) {
+        camActiveCard.querySelector('.cam-player').style.display = 'none';
+      }
+      camActiveCard = card;
+      playerDiv.style.display = 'block';
+      camMap.setView([c.lat, c.lon], 17);
+
+      if (c.directUrl) {
+        playerDiv.innerHTML = `<div class="cam-player-msg">direct stream → <a href="${c.directUrl}" target="_blank" style="color:rgba(232,228,220,0.7);">${c.directUrl.slice(0,40)}…</a></div>`;
+        return;
+      }
+
+      playerDiv.innerHTML = '<div class="cam-player-msg">searching windy...</div>';
+
+      try {
+        const lat = state.ambient.lat || 45.40;
+        const lon = state.ambient.lon || 11.87;
+        // Call our Vercel proxy — no key exposed in frontend
+        const res = await fetch(`/api/webcams?lat=${c.lat}&lon=${c.lon}&radius=400`);
+        const data = await res.json();
+        const webcams = data.webcams || [];
+        if (webcams.length > 0) {
+          const w = webcams[0];
+          const playerUrl = w.player?.day?.embed || w.player?.embed || null;
+          if (playerUrl) {
+            playerDiv.innerHTML = `<iframe src="${playerUrl}" allowfullscreen></iframe>`;
+            return;
+          }
+        }
+        playerDiv.innerHTML = `<div class="cam-player-msg">no stream available · <a href="https://www.windy.com/webcams/?${c.lat},${c.lon},16" target="_blank" style="color:rgba(232,228,220,0.5);">search windy →</a></div>`;
+      } catch(e) {
+        playerDiv.innerHTML = `<div class="cam-player-msg">windy unavailable locally · deploy to vercel for live streams</div>`;
+      }
+    });
+
+    list.appendChild(card);
+  });
+}
+
+function setCamStatus(msg) {
+  document.getElementById('cam-status').textContent = msg;
+}
+
+// init
+initAmbient();
+document.getElementById('cam-close').addEventListener('click', closeCamOverlay);
+</script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</body>
+</html>
