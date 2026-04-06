@@ -1017,7 +1017,7 @@ function finalize() {
   const now2  = new Date();
   const pad2  = n => String(n).padStart(2,'0');
   document.getElementById('footer-meta').textContent =
-    `${label}\n${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(now2.getDate())}  ${pad2(now2.getHours())}:${pad2(now2.getMinutes())}`;
+    `${label}\n${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(now2.getDate())}`;
 
   setTimeout(() => {
     document.getElementById('hapax-footer').classList.add('visible');
