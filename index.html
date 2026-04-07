@@ -159,99 +159,118 @@ function drawOverlay(canvas, webcam, userLat, userLon, color, idx) {
   const br = bearing(camLat, camLon, userLat, userLon);
   const dist = distKm(camLat, camLon, userLat, userLon);
 
-  // arrow direction from center toward bearing
-  const cx = W / 2, cy = H / 2;
+  // Position the detection box toward the bearing direction
+  // bearing 0=N(top) 90=E(right) 180=S(bottom) 270=W(left)
   const rad = br * Math.PI / 180;
-  const reach = Math.min(W, H) * 0.36;
+  const margin = 0.28;
+  // center of box: offset from frame center toward bearing direction
+  const reach = Math.min(W, H) * 0.26;
+  const bcx = W / 2 + Math.sin(rad) * reach;
+  const bcy = H / 2 - Math.cos(rad) * reach;
 
-  const ex = cx + Math.sin(rad) * reach;
-  const ey = cy - Math.cos(rad) * reach;
+  const bw = W * 0.22, bh = H * 0.30;
+  const bx = bcx - bw / 2, by = bcy - bh / 2;
+  const clen = 14; // corner bracket length
 
-  // outer circle
-  const R = Math.min(W, H) * 0.12;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.2;
-  ctx.globalAlpha = 0.75;
-  ctx.beginPath();
-  ctx.arc(cx, cy, R, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // cross ticks
-  const gap = R + 6, arm = 14;
-  [[cx, cy-gap, cx, cy-gap-arm],[cx, cy+gap, cx, cy+gap+arm],
-   [cx-gap, cy, cx-gap-arm, cy],[cx+gap, cy, cx+gap+arm, cy]].forEach(([x1,y1,x2,y2]) => {
-    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-  });
-
-  // center dot
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 1;
-  ctx.beginPath();
-  ctx.arc(cx, cy, 2.5, 0, Math.PI*2);
-  ctx.fill();
-
-  // direction arrow
-  ctx.globalAlpha = 0.9;
+  // ── AI detection box ──────────────────────────────────────────────────────
   ctx.strokeStyle = color;
   ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(ex, ey);
-  ctx.stroke();
+  ctx.globalAlpha = 0.9;
+
+  // corner brackets only (no full rect)
+  const corners = [
+    [bx,        by,        1, 0, 0, 1],
+    [bx+bw,     by,       -1, 0, 0, 1],
+    [bx,        by+bh,     1, 0, 0,-1],
+    [bx+bw,     by+bh,    -1, 0, 0,-1],
+  ];
+  corners.forEach(([x, y, hx, hy, vx, vy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + hx * clen, y);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x, y + vy * clen);
+    ctx.stroke();
+  });
+
+  // dashed inner rect (faint)
+  ctx.globalAlpha = 0.18;
+  ctx.setLineDash([3, 5]);
+  ctx.strokeRect(bx, by, bw, bh);
   ctx.setLineDash([]);
+  ctx.globalAlpha = 0.9;
 
-  // arrowhead
-  const headLen = 10;
-  const a1 = rad + Math.PI - 0.4, a2 = rad + Math.PI + 0.4;
+  // center crosshair inside box
+  const csize = 6;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(ex, ey);
-  ctx.lineTo(ex + headLen * Math.sin(a1), ey - headLen * Math.cos(a1));
-  ctx.moveTo(ex, ey);
-  ctx.lineTo(ex + headLen * Math.sin(a2), ey - headLen * Math.cos(a2));
+  ctx.moveTo(bcx - csize, bcy); ctx.lineTo(bcx + csize, bcy);
+  ctx.moveTo(bcx, bcy - csize); ctx.lineTo(bcx, bcy + csize);
   ctx.stroke();
 
-  // ── HUD text ───────────────────────────────────────────────────────────────
+  // label tag above box
+  const label = `TARGET · ${br.toFixed(1)}° · ${dist.toFixed(0)}km`;
+  ctx.font = `bold 9px 'Courier New', monospace`;
+  const tw = ctx.measureText(label).width;
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(bx, by - 16, tw + 10, 14);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = color;
+  ctx.fillText(label, bx + 5, by - 5);
+
+  // confidence bar below box
+  const conf = Math.max(20, Math.min(99, Math.round(100 - dist * 0.05)));
+  const barW = bw;
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = color;
+  ctx.fillRect(bx, by + bh + 2, barW, 3);
+  ctx.globalAlpha = 0.8;
+  ctx.fillRect(bx, by + bh + 2, barW * conf / 100, 3);
+  ctx.globalAlpha = 0.7;
+  ctx.font = `8px 'Courier New', monospace`;
+  ctx.fillText(`CONF ${conf}%`, bx, by + bh + 14);
+
+  // ── HUD info panel (bottom-left) ───────────────────────────────────────────
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = color;
-  ctx.font = `bold 10px 'Courier New', monospace`;
+  ctx.font = `bold 9px 'Courier New', monospace`;
 
-  const camTitle = (webcam.title || 'UNKNOWN').toUpperCase().slice(0, 28);
-  const camCity  = (webcam.location.city || webcam.location.country || '???').toUpperCase();
-  const status   = (webcam.status || 'ACTIVE').toUpperCase();
+  const camTitle = (webcam.title || 'UNKNOWN').toUpperCase().slice(0, 30);
+  const camCity  = (loc.city || loc.country || '???').toUpperCase();
   const updated  = webcam.lastUpdatedOn ? String(webcam.lastUpdatedOn).replace('T',' ').slice(0,19) : '---';
 
   const lines = [
     `CH-0${idx+1} // ${camTitle}`,
-    `CAM  LAT ${fmtCoord(camLat,'N','S')}  LON ${fmtCoord(camLon,'E','W')}`,
-    `LOC  ${camCity}`,
-    `USER LAT ${fmtCoord(userLat,'N','S')}  LON ${fmtCoord(userLon,'E','W')}`,
-    `BRG  ${br.toFixed(2).padStart(6)}°   DIST ${dist.toFixed(1)} km`,
-    `STAT ${status}   UPD ${updated}`,
+    `CAM  ${fmtCoord(camLat,'N','S')}  ${fmtCoord(camLon,'E','W')}`,
+    `     ${camCity}`,
+    `USER ${fmtCoord(userLat,'N','S')}  ${fmtCoord(userLon,'E','W')}`,
+    `BRG  ${br.toFixed(2)}°   DIST ${dist.toFixed(1)} km`,
+    `UPD  ${updated}`,
   ];
 
-  const lineH = 14;
-  const padX = 10, padY = 10;
-  const boxH = lines.length * lineH + 10;
-  const boxW = 310;
+  const lineH = 13;
+  const panelW = 290, panelH = lines.length * lineH + 10;
+  const px = 8, py = H - panelH - 8;
 
-  ctx.globalAlpha = 0.55;
+  ctx.globalAlpha = 0.5;
   ctx.fillStyle = '#000';
-  ctx.fillRect(padX, padY, boxW, boxH);
+  ctx.fillRect(px, py, panelW, panelH);
+
+  // panel corner brackets
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  const bl = 7;
+  [[px,py,bl,0,0,bl],[px+panelW,py,-bl,0,0,bl],
+   [px,py+panelH,bl,0,0,-bl],[px+panelW,py+panelH,-bl,0,0,-bl]].forEach(([x,y,dx1,dy1,dx2,dy2])=>{
+    ctx.beginPath();
+    ctx.moveTo(x+dx1,y+dy1); ctx.lineTo(x,y); ctx.lineTo(x+dx2,y+dy2);
+    ctx.stroke();
+  });
 
   ctx.globalAlpha = 0.9;
   ctx.fillStyle = color;
-  lines.forEach((l, i) => ctx.fillText(l, padX + 6, padY + 14 + i * lineH));
-
-  // corner brackets
-  ctx.globalAlpha = 0.5;
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
-  const bw = boxW, bh = boxH, bx = padX, by = padY, blen = 8;
-  [[bx,by,1,0],[bx,by,0,1],[bx+bw,by,-1,0],[bx+bw,by,0,1],
-   [bx,by+bh,1,0],[bx,by+bh,0,-1],[bx+bw,by+bh,-1,0],[bx+bw,by+bh,0,-1]].forEach(([x,y,dx,dy]) => {
-    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+dx*blen, y+dy*blen); ctx.stroke();
-  });
+  lines.forEach((l, i) => ctx.fillText(l, px + 6, py + 13 + i * lineH));
 }
 
 function fmtCoord(val, pos, neg) {
