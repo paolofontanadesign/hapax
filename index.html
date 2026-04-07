@@ -139,6 +139,37 @@
 <script>
 const CHANNEL_COLORS = ['#00ff41','#00cfff','#ff9500','#ff3b6b'];
 
+// ── PARSE CAMERA FACING FROM TITLE ───────────────────────────────────────────
+function parseCameraFacing(title) {
+  const t = title || '';
+  const dirs = {
+    'north-northeast': 22.5, 'nne': 22.5,
+    'north-northeast': 22.5,
+    'northeast': 45, 'north-east': 45, 'ne': 45,
+    'east-northeast': 67.5, 'ene': 67.5,
+    'east': 90,
+    'east-southeast': 112.5, 'ese': 112.5,
+    'southeast': 135, 'south-east': 135, 'se': 135,
+    'south-southeast': 157.5, 'sse': 157.5,
+    'south': 180,
+    'south-southwest': 202.5, 'ssw': 202.5,
+    'southwest': 225, 'south-west': 225, 'sw': 225,
+    'west-southwest': 247.5, 'wsw': 247.5,
+    'west': 270,
+    'west-northwest': 292.5, 'wnw': 292.5,
+    'northwest': 315, 'north-west': 315, 'nw': 315,
+    'north-northwest': 337.5, 'nnw': 337.5,
+    'north': 0,
+  };
+  // match "› South-west" or "› NE" patterns
+  const m = t.match(/[›>]\s*([A-Za-z\-]+)/);
+  if (m) {
+    const key = m[1].toLowerCase().replace(/\s+/g, '-');
+    if (key in dirs) return dirs[key];
+  }
+  return null; // unknown
+}
+
 // ── BEARING ──────────────────────────────────────────────────────────────────
 function bearing(fromLat, fromLon, toLat, toLon) {
   const f = Math.PI / 180;
@@ -170,14 +201,23 @@ function drawOverlay(canvas, webcam, userLat, userLon, color, idx) {
   const br = bearing(camLat, camLon, userLat, userLon);
   const dist = distKm(camLat, camLon, userLat, userLon);
 
-  // Position the detection box toward the bearing direction
-  // bearing 0=N(top) 90=E(right) 180=S(bottom) 270=W(left)
-  const rad = br * Math.PI / 180;
-  const margin = 0.28;
-  // center of box: offset from frame center toward bearing direction
-  const reach = Math.min(W, H) * 0.26;
-  const bcx = W / 2 + Math.sin(rad) * reach;
-  const bcy = H / 2 - Math.cos(rad) * reach;
+  // Calculate where user appears in this camera's frame
+  const camFacing = parseCameraFacing(webcam.title);
+  let bcx, bcy;
+  if (camFacing !== null) {
+    // relative bearing: how far left/right the user is from camera's view center
+    let rel = br - camFacing;
+    // normalize to -180..180
+    rel = ((rel + 540) % 360) - 180;
+    // map -90..+90 degrees to left/right of frame (beyond ±90 = off frame edge)
+    const xFrac = Math.max(-0.5, Math.min(0.5, rel / 90 * 0.5));
+    bcx = W / 2 + xFrac * W;
+    bcy = H / 2; // vertical unknown, keep center
+  } else {
+    // no direction info: show at center
+    bcx = W / 2;
+    bcy = H / 2;
+  }
 
   const bw = W * 0.22, bh = H * 0.30;
   const bx = bcx - bw / 2, by = bcy - bh / 2;
@@ -261,7 +301,7 @@ function drawOverlay(canvas, webcam, userLat, userLon, color, idx) {
 
   const lineH = 13;
   const panelW = 290, panelH = lines.length * lineH + 10;
-  const px = 8, py = H - panelH - 8;
+  const px = 0, py = 0;
 
   ctx.globalAlpha = 0.5;
   ctx.fillStyle = '#000';
@@ -312,6 +352,7 @@ async function init() {
   try {
     const r = await fetch(`/api/webcams?lat=${userLat}&lon=${userLon}`);
     const data = await r.json();
+    console.log('WEBCAM[0] FULL:', JSON.stringify((data.webcams||[])[0]));
     webcams = (data.webcams || []).filter(w => w.status === 'active').slice(0, 4);
     if (!webcams.length) webcams = (data.webcams || []).slice(0, 4);
   } catch(e) {
