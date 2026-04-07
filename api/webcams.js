@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     // Windy hard limit: radius max 250km
     const url = `https://api.windy.com/webcams/api/v3/webcams` +
       `?nearby=${lat},${lon},250` +
-      `&limit=20` +
+      `&limit=50` +
       `&fields=webcamId,title,status,lastUpdatedOn` +
       `&include=location,player,images,categories`;
 
