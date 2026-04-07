@@ -35,10 +35,10 @@
     border: 1px solid rgba(0,255,65,0.2);
   }
 
-  .cell iframe {
+  .cell img.feed {
     width: 100%;
     height: 100%;
-    border: none;
+    object-fit: cover;
     display: block;
     filter: grayscale(20%) contrast(1.05);
   }
@@ -154,8 +154,9 @@ function drawOverlay(canvas, webcam, userLat, userLon, color, idx) {
   canvas.width = W; canvas.height = H;
   ctx.clearRect(0, 0, W, H);
 
-  const camLat = webcam.location.latitude;
-  const camLon = webcam.location.longitude;
+  const loc = webcam.location || webcam.data?.location || {};
+  const camLat = loc.latitude ?? loc.lat ?? 0;
+  const camLon = loc.longitude ?? loc.lon ?? 0;
   const br = bearing(camLat, camLon, userLat, userLon);
   const dist = distKm(camLat, camLon, userLat, userLon);
 
@@ -282,7 +283,9 @@ async function init() {
   try {
     const r = await fetch(`/api/webcams?lat=${userLat}&lon=${userLon}`);
     const data = await r.json();
+    console.log('RAW API RESPONSE:', JSON.stringify(data).slice(0, 2000));
     webcams = (data.webcams || []).filter(w => w.status === 'active').slice(0, 4);
+    if (!webcams.length) webcams = (data.webcams || []).slice(0, 4);
   } catch(e) {
     setStatus('NETWORK ERROR: ' + e.message);
     return;
@@ -306,17 +309,18 @@ function buildGrid(webcams, userLat, userLon) {
 
   webcams.forEach((wc, i) => {
     const color = CHANNEL_COLORS[i];
-    const playerUrl = wc.player?.day?.embed || wc.player?.embed || '';
+    const imgUrl = wc.image?.current?.preview || wc.image?.current?.full || '';
 
     const cell = document.createElement('div');
     cell.className = 'cell';
 
-    if (playerUrl) {
-      const iframe = document.createElement('iframe');
-      iframe.src = playerUrl;
-      iframe.allow = 'autoplay';
-      iframe.setAttribute('allowfullscreen', '');
-      cell.appendChild(iframe);
+    if (imgUrl) {
+      const img = document.createElement('img');
+      img.className = 'feed';
+      img.src = imgUrl;
+      cell.appendChild(img);
+      // refresh snapshot every 60s
+      setInterval(() => { img.src = imgUrl + '?t=' + Date.now(); }, 60000);
     } else {
       cell.style.background = '#080808';
     }
