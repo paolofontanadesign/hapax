@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       `?nearby=${lat},${lon},250` +
       `&limit=20` +
       `&fields=webcamId,title,status,lastUpdatedOn` +
-      `&include=location,player,images`;
+      `&include=location,player,images,categories`;
 
     const upstream = await fetch(url, { headers: { 'x-windy-api-key': key } });
     if (!upstream.ok) {
