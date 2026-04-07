@@ -220,7 +220,7 @@ function drawOverlay(canvas, webcam, userLat, userLon, color, idx) {
   const camTitle = (webcam.title || 'UNKNOWN').toUpperCase().slice(0, 28);
   const camCity  = (webcam.location.city || webcam.location.country || '???').toUpperCase();
   const status   = (webcam.status || 'ACTIVE').toUpperCase();
-  const updated  = webcam.lastUpdatedOn ? new Date(webcam.lastUpdatedOn*1000).toISOString().replace('T',' ').slice(0,19) : '---';
+  const updated  = webcam.lastUpdatedOn ? String(webcam.lastUpdatedOn).replace('T',' ').slice(0,19) : '---';
 
   const lines = [
     `CH-0${idx+1} // ${camTitle}`,
