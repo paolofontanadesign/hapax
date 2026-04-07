@@ -50,16 +50,6 @@
     pointer-events: none;
   }
 
-  .cell .logo-cover {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 120px;
-    height: 40px;
-    background: #000;
-    z-index: 5;
-    pointer-events: none;
-  }
 
   /* scanlines */
   .cell::after {
@@ -352,9 +342,20 @@ async function init() {
   try {
     const r = await fetch(`/api/webcams?lat=${userLat}&lon=${userLon}`);
     const data = await r.json();
-    console.log('WEBCAM[0] FULL:', JSON.stringify((data.webcams||[])[0]));
-    webcams = (data.webcams || []).filter(w => w.status === 'active').slice(0, 4);
-    if (!webcams.length) webcams = (data.webcams || []).slice(0, 4);
+    const active = (data.webcams || []).filter(w => w.status === 'active');
+    const buckets = [
+      { min: 0,   max: 5 },
+      { min: 5,   max: 10 },
+      { min: 10,  max: 50 },
+      { min: 50,  max: 100 },
+    ];
+    webcams = buckets.map(({ min, max }) =>
+      active.find(w => {
+        const d = distKm(userLat, userLon, w.location?.latitude ?? 0, w.location?.longitude ?? 0);
+        return d >= min && d < max;
+      })
+    ).filter(Boolean);
+    if (!webcams.length) webcams = active.slice(0, 4);
   } catch(e) {
     setStatus('NETWORK ERROR: ' + e.message);
     return;
@@ -393,10 +394,6 @@ function buildGrid(webcams, userLat, userLon) {
     } else {
       cell.style.background = '#080808';
     }
-
-    const cover = document.createElement('div');
-    cover.className = 'logo-cover';
-    cell.appendChild(cover);
 
     const canvas = document.createElement('canvas');
     cell.appendChild(canvas);
