@@ -35,10 +35,10 @@
     border: 1px solid rgba(0,255,65,0.2);
   }
 
-  .cell iframe.feed {
+  .cell img.feed {
     width: 100%;
     height: 100%;
-    border: none;
+    object-fit: cover;
     display: block;
   }
 
@@ -343,19 +343,27 @@ async function init() {
     const r = await fetch(`/api/webcams?lat=${userLat}&lon=${userLon}`);
     const data = await r.json();
     const active = (data.webcams || []).filter(w => w.status === 'active');
+    // attach distance to each webcam
+    active.forEach(w => {
+      w._dist = distKm(userLat, userLon, w.location?.latitude ?? 0, w.location?.longitude ?? 0);
+    });
+    active.sort((a, b) => a._dist - b._dist);
+
     const buckets = [
-      { min: 0,   max: 5 },
-      { min: 5,   max: 10 },
-      { min: 10,  max: 50 },
-      { min: 50,  max: 100 },
+      { min: 0,  max: 5   },
+      { min: 5,  max: 10  },
+      { min: 10, max: 50  },
+      { min: 50, max: Infinity },
     ];
-    webcams = buckets.map(({ min, max }) =>
-      active.find(w => {
-        const d = distKm(userLat, userLon, w.location?.latitude ?? 0, w.location?.longitude ?? 0);
-        return d >= min && d < max;
-      })
-    ).filter(Boolean);
-    if (!webcams.length) webcams = active.slice(0, 4);
+    const used = new Set();
+    webcams = buckets.map(({ min, max }) => {
+      // first try within range
+      let w = active.find(w => !used.has(w.webcamId) && w._dist >= min && w._dist < max);
+      // fallback: any unused webcam
+      if (!w) w = active.find(w => !used.has(w.webcamId));
+      if (w) used.add(w.webcamId);
+      return w;
+    }).filter(Boolean);
   } catch(e) {
     setStatus('NETWORK ERROR: ' + e.message);
     return;
@@ -379,18 +387,17 @@ function buildGrid(webcams, userLat, userLon) {
 
   webcams.forEach((wc, i) => {
     const color = CHANNEL_COLORS[i];
-    const embedUrl = wc.player?.day || '';
+    const imgUrl = wc.images?.current?.preview || wc.images?.current?.thumbnail || '';
 
     const cell = document.createElement('div');
     cell.className = 'cell';
 
-    if (embedUrl) {
-      const iframe = document.createElement('iframe');
-      iframe.className = 'feed';
-      iframe.src = embedUrl;
-      iframe.allow = 'autoplay';
-      iframe.setAttribute('allowfullscreen', '');
-      cell.appendChild(iframe);
+    if (imgUrl) {
+      const img = document.createElement('img');
+      img.className = 'feed';
+      img.src = imgUrl + '?t=' + Date.now();
+      cell.appendChild(img);
+      setInterval(() => { img.src = imgUrl + '?t=' + Date.now(); }, 60000);
     } else {
       cell.style.background = '#080808';
     }
