@@ -283,6 +283,7 @@ async function init() {
   try {
     const r = await fetch(`/api/webcams?lat=${userLat}&lon=${userLon}`);
     const data = await r.json();
+    console.log('WEBCAM[0]:', JSON.stringify((data.webcams||[])[0]));
     webcams = (data.webcams || []).filter(w => w.status === 'active').slice(0, 4);
     if (!webcams.length) webcams = (data.webcams || []).slice(0, 4);
   } catch(e) {
