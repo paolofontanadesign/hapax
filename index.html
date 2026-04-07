@@ -50,6 +50,17 @@
     pointer-events: none;
   }
 
+  .cell .logo-cover {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 120px;
+    height: 40px;
+    background: #000;
+    z-index: 5;
+    pointer-events: none;
+  }
+
   /* scanlines */
   .cell::after {
     content: '';
@@ -341,6 +352,10 @@ function buildGrid(webcams, userLat, userLon) {
     } else {
       cell.style.background = '#080808';
     }
+
+    const cover = document.createElement('div');
+    cover.className = 'logo-cover';
+    cell.appendChild(cover);
 
     const canvas = document.createElement('canvas');
     cell.appendChild(canvas);
