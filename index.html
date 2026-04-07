@@ -5,1362 +5,346 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HAPAX</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Space+Mono:wght@400&display=swap');
-
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg: #080808;
-    --fg: #e8e4dc;
-    --fg-dim: rgba(232, 228, 220, 0.35);
-    --fg-hint: rgba(232, 228, 220, 0.12);
-    --accent: rgba(232, 228, 220, 0.06);
-    --serif: 'EB Garamond', Georgia, serif;
-    --mono: 'Space Mono', monospace;
+    --green: #00ff41;
+    --dim: rgba(0,255,65,0.45);
+    --bg: #000;
+    --mono: 'Courier New', monospace;
   }
 
   html, body {
     width: 100%; height: 100%;
     background: var(--bg);
-    color: var(--fg);
-    font-family: var(--serif);
     overflow: hidden;
-  }
-
-  /* ── CANVAS LAYERS ── */
-  #stage {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-  }
-
-  canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%; height: 100%;
-  }
-
-
-  .panel {
-    pointer-events: all;
-    width: min(540px, 90vw);
-    opacity: 0;
-    transform: translateY(12px);
-    transition: opacity 1.2s ease, transform 1.2s ease;
-  }
-  .panel.visible { opacity: 1; transform: translateY(0); }
-  .panel.hidden  { opacity: 0; pointer-events: none; }
-
-  /* question panels */
-  .question-label {
     font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.18em;
-    color: var(--fg-dim);
-    text-transform: uppercase;
-    margin-bottom: 24px;
   }
 
-  .question-text {
-    font-size: clamp(20px, 3vw, 28px);
-    font-weight: 400;
-    line-height: 1.35;
-    color: var(--fg);
-    margin-bottom: 40px;
-    font-style: italic;
+  #grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    width: 100vw;
+    height: 100vh;
   }
 
-  /* spatial input — a field to click */
-  #spatial-field .hint {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.14em;
-    color: var(--fg-dim);
-    text-transform: uppercase;
-    pointer-events: none;
-    transition: opacity 0.4s;
-  }
-  /* crosshair lines */
-  #spatial-hx { height: 0.5px; left: 0; right: 0; transform: translateY(-50%); }
-  #output-timestamp {
-    font-size: clamp(11px, 1.5vw, 13px);
-    color: var(--fg-dim);
-    font-family: var(--mono);
-    letter-spacing: 0.08em;
-    line-height: 2;
+  .cell {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(0,255,65,0.2);
   }
 
-  /* ambient data overlay — large, centered, on top of field */
-  /* ── HAPAX LABEL — bottom left ── */
-  #hapax-footer {
-    position: fixed;
-    bottom: 24px;
-    left: 28px;
-    opacity: 0;
-    transition: opacity 3s ease 1s;
-    pointer-events: none;
-    z-index: 25;
-  }
-  #hapax-footer.visible { opacity: 1; }
-  #hapax-footer .footer-id {
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.28em;
-    color: rgba(232,228,220,0.3);
-    text-transform: uppercase;
-    display: block;
-    margin-bottom: 4px;
-  }
-  #hapax-footer .footer-meta {
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.12em;
-    color: rgba(232,228,220,0.18);
-    text-transform: uppercase;
-    line-height: 1.8;
-    white-space: pre;
-  }
-
-  /* ── MINIMAP — bottom right ── */
-  #minimap {
-    position: fixed;
-    bottom: 24px;
-    right: 28px;
-    width: 140px;
-    height: 140px;
-    z-index: 25;
-    opacity: 0;
-    transition: opacity 2s ease 1s;
-    pointer-events: none;
-    border: 0.5px solid rgba(140,255,140,0.2);
-  }
-  #minimap.visible { opacity: 1; }
-
-  /* progress dots */
-  #progress.visible { opacity: 1; }
-  .dot.active { background: var(--fg); transform: scale(1.4); }
-
-  /* ── AMBIENT BAR — top left, single clean line ── */
-  #ambient-bar {
-    position: fixed;
-    top: 24px;
-    left: 28px;
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    color: rgba(232,228,220,0.55);
-    text-transform: uppercase;
-    opacity: 0;
-    transition: opacity 1.2s;
-    white-space: nowrap;
-    z-index: 25;
-    pointer-events: none;
-  }
-  #ambient-bar.visible { opacity: 1; }
-
-  /* ── WEBCAM CRT OVERLAY ── */
-  #cam-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 40;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 2.5s ease;
-  }
-  #cam-overlay.visible { opacity: 1; }
-
-  /* The actual video iframe */
-  #cam-iframe {
-    position: absolute;
-    inset: 0;
+  .cell iframe {
     width: 100%;
     height: 100%;
     border: none;
-    /* desaturate + darken — CRT base look */
-    filter: grayscale(0.65) brightness(0.5) contrast(1.3) sepia(0.2);
-    mix-blend-mode: screen;
-    pointer-events: none;
+    display: block;
+    filter: grayscale(20%) contrast(1.05);
   }
 
-  /* CRT scanlines — canvas drawn over iframe */
-  #crt-canvas {
+  .cell canvas {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
     pointer-events: none;
-    mix-blend-mode: multiply;
-    opacity: 0.88;
   }
 
-  /* Vignette */
-  #cam-overlay::before {
+  /* scanlines */
+  .cell::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse at center,
-      transparent 40%,
-      rgba(0,0,0,0.72) 100%);
-    z-index: 2;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(0,0,0,0.18) 3px,
+      rgba(0,0,0,0.18) 4px
+    );
     pointer-events: none;
+    z-index: 10;
   }
 
-  /* Camera metadata — bottom left, terminal style */
-  #cam-label {
-    position: absolute;
-    bottom: 24px;
-    left: 28px;
-    font-family: var(--mono);
-    font-size: clamp(11px, 1.3vw, 14px);
-    letter-spacing: 0.14em;
-    color: rgba(140,255,140,0.85);
-    text-transform: uppercase;
-    white-space: pre;
-    pointer-events: none;
-    z-index: 5;
-    line-height: 1.9;
-    text-shadow: 0 0 12px rgba(100,255,100,0.5);
+  #loading {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    color: var(--green);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    gap: 16px;
   }
 
-  /* REC indicator */
-  #cam-rec {
-    position: absolute;
-    top: 22px;
-    right: 28px;
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.2em;
-    color: rgba(255,80,80,0.8);
-    text-transform: uppercase;
-    z-index: 5;
+  #loading .blink { animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  #divider-h {
+    position: fixed;
+    top: 50%; left: 0; right: 0;
+    height: 1px;
+    background: rgba(0,255,65,0.35);
     pointer-events: none;
-    text-shadow: 0 0 6px rgba(255,60,60,0.5);
-    animation: recBlink 1.8s ease-in-out infinite;
+    z-index: 20;
   }
-  @keyframes recBlink { 0%,45%,100%{opacity:1} 50%,95%{opacity:0.1} }
+  #divider-v {
+    position: fixed;
+    left: 50%; top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(0,255,65,0.35);
+    pointer-events: none;
+    z-index: 20;
+  }
+  #center-dot {
+    position: fixed;
+    top: 50%; left: 50%;
+    width: 6px; height: 6px;
+    margin: -3px 0 0 -3px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    pointer-events: none;
+    z-index: 21;
+  }
 </style>
 </head>
 <body>
 
-<!-- canvas stage: three independent layers -->
-<div id="stage">
-  <canvas id="layer-synth"></canvas>
+<div id="loading">
+  <div>HAPAX // SURVEILLANCE NETWORK</div>
+  <div id="load-status">ACQUIRING GPS COORDINATES<span class="blink">_</span></div>
 </div>
 
-<!-- ambient data bar -->
-<div id="ambient-bar">
-  <span id="amb-time">--:--</span>
-  <span id="amb-sep1"> · </span>
-  <span id="amb-loc">--</span>
-  <span id="amb-sep2"> · </span>
-  <span id="amb-season">--</span>
-  <span id="amb-sep3"> · </span>
-  <span id="amb-weather">--</span>
-</div>
-
-
-
-
-
-
-<!-- final footer -->
-<div id="hapax-footer">
-  <span class="footer-id">hapax</span>
-  <span class="footer-meta" id="footer-meta"></span>
-</div>
-
-<!-- minimap — bottom right -->
-<canvas id="minimap"></canvas>
-
-<!-- webcam CRT overlay — auto-appears, blended over field -->
-<div id="cam-overlay">
-  <iframe id="cam-iframe" src="" allowfullscreen></iframe>
-  <canvas id="crt-canvas"></canvas>
-  <div id="cam-rec">● rec</div>
-  <div id="cam-label"></div>
-</div>
+<div id="grid"></div>
+<div id="divider-h"></div>
+<div id="divider-v"></div>
+<div id="center-dot"></div>
 
 <script>
-// ─────────────────────────────────────────
-// STATE
-// ─────────────────────────────────────────
-const state = {
-  step: -1,
-  ambient: { hour: 0, minute: 0, season: 0, lat: 45.40, lon: 11.87, weather: null },
-};
+const CHANNEL_COLORS = ['#00ff41','#00cfff','#ff9500','#ff3b6b'];
 
-// ─────────────────────────────────────────
-// WEATHER — OpenWeatherMap free tier
-// Replace OWM_KEY with your API key from openweathermap.org
-// ─────────────────────────────────────────
-const OWM_KEY = 'YOUR_API_KEY_HERE';
-
-// weather condition → visual parameters
-// conditionCode: OWM main condition string
-function parseWeather(data) {
-  const main    = data.weather[0].main.toLowerCase(); // clear, clouds, rain, snow, mist, fog...
-  const temp    = data.main.temp;          // celsius
-  const humidity= data.main.humidity;     // 0–100
-  const pressure= data.main.pressure;     // hPa, typical 980–1040
-  const wind    = data.wind.speed;        // m/s
-
-  // density: how diffuse the visual field is
-  // clear=sharp, fog/mist=very diffuse, clouds=medium
-  const densityMap = {
-    clear: 0.0, clouds: 0.35, drizzle: 0.55,
-    rain: 0.65, thunderstorm: 0.75, snow: 0.6,
-    mist: 0.8, fog: 0.9, haze: 0.7, smoke: 0.7,
-  };
-  const density = densityMap[main] ?? 0.4;
-
-  // chromatic warmth: cold=-1 (grey-blue), warm=+1 (warm white)
-  // normalised roughly -20°C to +40°C → -1 to +1
-  const warmth = Math.max(-1, Math.min(1, (temp - 10) / 25));
-
-  // pressure tension: high pressure = stable geometry, low = expanding
-  // 1013 hPa = sea level standard. Range ~960–1040
-  const tension = (pressure - 980) / 60; // -0.55 to +1
-
-  // wind perturbation: 0 = still, 1 = very windy (>15 m/s)
-  const perturbation = Math.min(wind / 15, 1);
-
-  return { main, density, warmth, tension, perturbation, temp, humidity, wind, pressure };
+// ── BEARING ──────────────────────────────────────────────────────────────────
+function bearing(fromLat, fromLon, toLat, toLon) {
+  const f = Math.PI / 180;
+  const dLon = (toLon - fromLon) * f;
+  const lat1 = fromLat * f, lat2 = toLat * f;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 }
 
-async function fetchWeather(lat, lon) {
-  if (OWM_KEY === 'YOUR_API_KEY_HERE') {
-    // fallback: simulate neutral weather
-    state.ambient.weather = {
-      main: 'clear', density: 0.1, warmth: 0.2,
-      tension: 0.3, perturbation: 0.1,
-      temp: 18, humidity: 55, wind: 2, pressure: 1013,
-    };
-    updateWeatherBar();
-    return;
-  }
-  try {
-    const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OWM_KEY}&units=metric`;
-    const res  = await fetch(url);
-    const data = await res.json();
-    state.ambient.weather = parseWeather(data);
-    updateWeatherBar();
-  } catch(e) {
-    state.ambient.weather = {
-      main: 'clear', density: 0.1, warmth: 0.2,
-      tension: 0.3, perturbation: 0.1,
-      temp: 18, humidity: 55, wind: 2, pressure: 1013,
-    };
-    updateWeatherBar();
-  }
-}
-
-function updateWeatherBar() {
-  const w = state.ambient.weather;
-  if (!w) return;
-  const el = document.getElementById('amb-weather');
-  if (el) el.textContent = `${w.main} · ${Math.round(w.temp)}°`;
-}
-
-// ─────────────────────────────────────────
-// AMBIENT INIT
-// ─────────────────────────────────────────
-function initAmbient() {
-  const now = new Date();
-  state.ambient.hour   = now.getHours();
-  state.ambient.minute = now.getMinutes();
-  const doy = (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
-               Date.UTC(now.getFullYear(), 0, 0)) / 86400000;
-  state.ambient.season = doy / 365;
-
-  const seasons = ['winter','spring','summer','autumn'];
-  const si = Math.floor(((state.ambient.season + 0.125) % 1) * 4);
-
-  document.getElementById('amb-time').textContent =
-    String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
-  document.getElementById('amb-season').textContent = seasons[si];
-
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      state.ambient.lat = pos.coords.latitude;
-      state.ambient.lon = pos.coords.longitude;
-      document.getElementById('amb-loc').textContent =
-        pos.coords.latitude.toFixed(2) + '° ' + pos.coords.longitude.toFixed(2) + '°';
-      // fetch weather once we have coordinates
-      fetchWeather(state.ambient.lat, state.ambient.lon);
-    }, () => {
-      document.getElementById('amb-loc').textContent = '45.40° 11.87°';
-      // fallback coords — Padova
-      fetchWeather(45.40, 11.87);
-    });
-  } else {
-    fetchWeather(45.40, 11.87);
-  }
-}
-
-// ─────────────────────────────────────────
-// CANVAS SETUP
-// ─────────────────────────────────────────
-function setupCanvas(id) {
-  const c = document.getElementById(id);
-  const resize = () => { c.width = window.innerWidth; c.height = window.innerHeight; };
-  resize();
-  window.addEventListener('resize', resize);
-  return c;
-}
-
-const cSynth   = setupCanvas('layer-synth');
-const ctxSynth = cSynth.getContext('2d');
-
-// ─────────────────────────────────────────
-// AMBIENT TIMING — derived from hour + season
-// slowness: 0 = noon midsummer (fast), 1 = 3am midwinter (slow)
-// ─────────────────────────────────────────
-function getAmbientTiming() {
-  const h = state.ambient.hour;
-  const s = state.ambient.season;
-  const w = state.ambient.weather || { density: 0.1, perturbation: 0.1 };
-
-  const todFactor    = Math.cos(((h - 3) / 24) * Math.PI * 2) * 0.5 + 0.5;
-  const seasonFactor = Math.cos((s - 0.5) * Math.PI * 2) * -0.5 + 0.5;
-  // heavy weather (fog, rain) adds up to 0.2 slowness
-  const weatherFactor = w.density * 0.2;
-
-  const slowness = todFactor * 0.55 + seasonFactor * 0.25 + weatherFactor;
-
-  return {
-    q1ToQ2:       1200 + slowness * 3600,
-    q2Floor:       500 + slowness * 2300,
-    q2DurationMult: 0.08 + slowness * 0.14,
-    q3ToOutput:    800 + slowness * 1600,
-    layerDelay:    100 + slowness * 400,
-  };
-}
-
-// ─────────────────────────────────────────
-// LAYER A — FIXED RULES (the immovable system)
-// ─────────────────────────────────────────
-
-// Derived constants from ambient (change each session but fixed per session)
-function getSystemConstants() {
-  const h = state.ambient.hour / 24;
-  const s = state.ambient.season;
-  const w = state.ambient.weather || { density: 0.1, warmth: 0.2, tension: 0.3, perturbation: 0.1 };
-
-  return {
-    gridN:       Math.floor(12 + h * 8),          // 12–20 grid divisions
-    baseFreq:    0.003 + s * 0.002,               // base wave frequency
-    phi:         (1 + Math.sqrt(5)) / 2,          // golden ratio — always
-    density:     0.4 + h * 0.2 + w.density * 0.4, // higher = more diffuse field
-    angle:       (s * Math.PI * 0.5) % Math.PI,   // field rotation by season
-    warmth:      w.warmth,       // -1 (cold/blue) to +1 (warm/white)
-    tension:     w.tension,      // pressure: -1 (expanding) to +1 (stable)
-    perturbation:w.perturbation, // wind: 0 (still) to 1 (turbulent)
-    weatherMain: w.main,
-  };
-}
-
-// ─────────────────────────────────────────
-// LAYER RENDERERS
-// ─────────────────────────────────────────
-
-// Layer C+A: SPACE — structural field grid
-
-// Layer B: LANGUAGE — rhythm and density field
-
-
-// ─────────────────────────────────────────
-// FLOW CONTROL
-// ─────────────────────────────────────────
-
-// ─────────────────────────────────────────
-// BUCOLICITY — spectrum axis 0=dystopian 1=pastoral
-// ─────────────────────────────────────────
-function computeBucolicity() {
-  const w = state.ambient.weather || { density: 0.15, warmth: 0.3 };
-  const h = state.ambient.hour;
-  const s = state.ambient.season;
-  const lat = Math.abs(state.ambient.lat || 45);
-
-  const clarity  = 1 - (w.density || 0.15);
-  const warmth   = ((w.warmth || 0) + 1) / 2;
-  const daylight = (h >= 5 && h <= 21) ? 1 - Math.abs(h - 13) / 14 : 0;
-  const season   = Math.max(0, Math.sin(s * Math.PI));
-  const latFactor = 1 - lat / 90;
-
-  return Math.max(0, Math.min(1,
-    clarity * 0.30 + warmth * 0.20 + daylight * 0.25 +
-    season * 0.15 + latFactor * 0.10
-  ));
-}
-
-function computeSeed() {
-  const now = new Date();
-  return Math.round(
-    now.getFullYear() * 1000 +
-    now.getMonth()    * 100  +
-    now.getDate()     * 10   +
-    now.getHours()    * 0.5  +
-    Math.round(now.getMinutes() / 5) +
-    (state.ambient.lat || 45) * 7.3  +
-    (state.ambient.lon || 11) * 3.1  +
-    ((state.ambient.weather && state.ambient.weather.pressure) || 1013) * 0.01
-  );
-}
-
-function seededRand(seed) {
-  let s = seed | 0;
-  return function() {
-    s = (Math.imul(s, 1664525) + 1013904223) | 0;
-    return (s >>> 0) / 4294967296;
-  };
-}
-
-// ─────────────────────────────────────────
-// PARTICLE FIELD — the mathematical signature of the moment
-// 40,000 points following curl noise derived entirely from inputs
-// No illustration. Pure structure.
-// ─────────────────────────────────────────
-const N_PART = 80000;
-let pX, pY, pVX, pVY;
-let fBuf, fW, fH;
-let partAnimFrame = null;
-let fieldParams   = null;
-
-function buildFieldParams(bucolicity, seed) {
-  const r = seededRand(seed);
-  const w = state.ambient.weather || { perturbation: 0.1, tension: 0.3 };
-  const h = state.ambient.hour / 24;
-  const s = state.ambient.season;
-  const lat = (state.ambient.lat || 45) / 90;
-  const lon = (state.ambient.lon || 11) / 180;
-
-  const a = 1.4 + r() * 1.2 + s * 0.8;
-  const b = 1.1 + r() * 1.4 + h * 0.5;
-  const c = r() * Math.PI * 2 + lat * Math.PI * 3;
-  const d = r() * Math.PI * 2 + lon * Math.PI * 3;
-  const e = s * Math.PI * 4;
-  const f = 0.4 + r() * 0.6;
-  const g = 0.8 + r() * 0.8;
-
-  const nV = 3 + Math.round(r() * 2);
-  const vortices = Array.from({length: nV}, () => ({
-    cx: r() * 2 - 1, cy: r() * 2 - 1,
-    s:  (r() > 0.5 ? 1 : -1) * (0.004 + r() * 0.012),
-    r2min: 0.008 + r() * 0.04,
-  }));
-
-  const warm = [
-    [8,3,0],[48,16,0],[110,42,0],
-    [200,95,10],[248,180,55],[255,235,140],[255,252,230]
-  ];
-  const cold = [
-    [0,2,10],[4,8,35],[12,22,90],
-    [28,55,180],[60,110,240],[130,175,255],[220,235,255]
-  ];
-  const lime = [
-    [2,4,8],[8,14,22],[20,38,55],
-    [40,90,80],[80,160,120],[160,230,190],[235,255,245]
-  ];
-
-  const brightness = 14 + (w.perturbation || 0.1) * 30;
-  const fade  = 0.974 + bucolicity * 0.010;
-  const speed = bucolicity > 0.5
-    ? 0.003 + (1 - bucolicity) * 0.003
-    : 0.005  + (1 - bucolicity) * 0.007;
-
-  return { a, b, c, d, e, f, g, bucolicity, speed, fade,
-           brightness, vortices, warm, cold, lime,
-           spX: 0.5 + lon * 0.3, spY: 0.5 + lat * 0.2 };
-}
-
-function curl(nx, ny, p) {
-  // Curl noise: divergence-free 2D vector field
-  // Creates smooth, non-converging flow — no sinks or sources
-  const { a, b, c, d, e, f, g, bucolicity, speed } = p;
-
-  // Potential scalar field ψ
-  const psi = Math.sin(a * nx + b * ny + c)
-            + f * Math.cos(g * ny - a * nx + d)
-            + 0.3 * Math.sin(e * nx * ny + c * 0.5);
-
-  // Gradient of ψ (numerical) → perpendicular = curl
-  const eps = 0.02;
-  const psi_dx = (Math.sin(a*(nx+eps) + b*ny + c)
-               + f*Math.cos(g*ny - a*(nx+eps) + d)
-               + 0.3*Math.sin(e*(nx+eps)*ny + c*0.5)) - psi;
-  const psi_dy = (Math.sin(a*nx + b*(ny+eps) + c)
-               + f*Math.cos(g*(ny+eps) - a*nx + d)
-               + 0.3*Math.sin(e*nx*(ny+eps) + c*0.5)) - psi;
-
-  // Curl: rotate gradient 90°
-  let fx = -psi_dy / eps * speed;
-  let fy =  psi_dx / eps * speed;
-
-  // Vortex contributions — spiral arms and galaxy-like structures
-  if (p.vortices) {
-    for (const v of p.vortices) {
-      const dx = nx - v.cx, dy = ny - v.cy;
-      const r2 = dx*dx + dy*dy;
-      const str = v.s / (r2 + v.r2min);
-      fx += -dy * str;
-      fy +=  dx * str;
-    }
-  }
-
-  if (bucolicity < 0.5) {
-    // Dystopian: add attractor pull toward spatial input
-    const dyst = 1 - bucolicity;
-    const ax = p.spX * 2 - 1;
-    const ay = p.spY * 2 - 1;
-    const dx = nx - ax, dy = ny - ay;
-    const r2 = dx*dx + dy*dy;
-    const pull = dyst * 0.006 / (r2 + 0.08);
-    fx += -dx * pull;
-    fy += -dy * pull;
-
-    // Extra turbulence
-    fx += Math.sin(b * ny * 3 + d) * 0.0018 * dyst;
-    fy += Math.cos(a * nx * 3 + c) * 0.0018 * dyst;
-  }
-
-  return [fx, fy];
-}
-
-function initParticleField(W, H, bucolicity, seed) {
-  pX  = new Float32Array(N_PART);
-  pY  = new Float32Array(N_PART);
-  pVX = new Float32Array(N_PART);
-  pVY = new Float32Array(N_PART);
-  fBuf = new Uint8ClampedArray(W * H * 4);
-  fW = W; fH = H;
-  // alpha = 255 everywhere
-  for (let i = 3; i < fBuf.length; i += 4) fBuf[i] = 255;
-
-  const r = seededRand(seed + 333);
-  if (bucolicity > 0.5) {
-    // Pastoral: even distribution across field
-    for (let i = 0; i < N_PART; i++) {
-      pX[i] = r() * W;
-      pY[i] = r() * H;
-    }
-  } else {
-    // Dystopian: 3–5 dense seed clusters
-    const nc = 3 + Math.round(r() * 2);
-    const cx = Array.from({length: nc}, () => r() * W);
-    const cy = Array.from({length: nc}, () => r() * H);
-    for (let i = 0; i < N_PART; i++) {
-      const c = Math.floor(r() * nc);
-      pX[i] = cx[c] + (r() - 0.5) * W * 0.18;
-      pY[i] = cy[c] + (r() - 0.5) * H * 0.18;
-    }
-  }
-}
-
-function tickParticles() {
-  const p = fieldParams;
-  const W = fW, H = fH;
-  const { fade, brightness, bucolicity, warm, cold, lime } = p;
-
-  // 1. Fade buffer toward black
-  for (let i = 0; i < fBuf.length; i += 4) {
-    fBuf[i]   = fBuf[i]   * fade | 0;
-    fBuf[i+1] = fBuf[i+1] * fade | 0;
-    fBuf[i+2] = fBuf[i+2] * fade | 0;
-  }
-
-  // 2. Update + render each particle with velocity-based colour
-  for (let i = 0; i < N_PART; i++) {
-    const nx = pX[i] / W * 2 - 1;
-    const ny = pY[i] / H * 2 - 1;
-    const [fx, fy] = curl(nx, ny, p);
-
-    pVX[i] = pVX[i] * 0.88 + fx;
-    pVY[i] = pVY[i] * 0.88 + fy;
-    pX[i] += pVX[i] * W * 0.5;
-    pY[i] += pVY[i] * H * 0.5;
-
-    // Boundary
-    if (bucolicity > 0.5) {
-      if (pX[i] < 0) pX[i] += W; else if (pX[i] >= W) pX[i] -= W;
-      if (pY[i] < 0) pY[i] += H; else if (pY[i] >= H) pY[i] -= H;
-    } else {
-      if (pX[i] < -W*0.1 || pX[i] > W*1.1 || pY[i] < -H*0.1 || pY[i] > H*1.1) {
-        pX[i] = W*(0.25+Math.random()*0.5); pY[i] = H*(0.25+Math.random()*0.5);
-        pVX[i] = 0; pVY[i] = 0; continue;
-      }
-    }
-
-    // Speed → palette index 0–6
-    const spd  = Math.sqrt(pVX[i]*pVX[i] + pVY[i]*pVY[i]) * W;
-    const pidx = Math.min(spd * 0.3, 5.99);
-    const pi   = pidx | 0;
-    const pt   = pidx - pi;
-
-    // Interpolate colour within each palette stop
-    function lerp3(pal) {
-      return [
-        pal[pi][0] + (pal[pi+1][0]-pal[pi][0])*pt,
-        pal[pi][1] + (pal[pi+1][1]-pal[pi][1])*pt,
-        pal[pi][2] + (pal[pi+1][2]-pal[pi][2])*pt,
-      ];
-    }
-    const wc = lerp3(warm), cc = lerp3(cold), lc = lerp3(lime);
-    const bw = bucolicity, bc = 1-bucolicity;
-    const bl = 1 - Math.abs(bw-0.5)*2;
-
-    // Mix palettes by bucolicity
-    const baseR = wc[0]*bw   + cc[0]*bc*0.6 + lc[0]*bl*0.4;
-    const baseG = wc[1]*bw   + cc[1]*bc*0.6 + lc[1]*bl*0.4;
-    const baseB = wc[2]*bw*0.5 + cc[2]*bc   + lc[2]*bl*0.4;
-
-    // Brightness scales with speed
-    const bright = brightness * (0.4 + pidx * 0.1);
-    const rV = baseR/255*bright | 0;
-    const gV = baseG/255*bright | 0;
-    const bV = baseB/255*bright | 0;
-
-    const bx = pX[i]|0, by = pY[i]|0;
-
-    if (pidx > 3.2) {
-      // BLOOM — 5×5 Gaussian for fast/bright particles
-      const K = [
-        0.03,0.07,0.10,0.07,0.03,
-        0.07,0.20,0.30,0.20,0.07,
-        0.10,0.30,1.00,0.30,0.10,
-        0.07,0.20,0.30,0.20,0.07,
-        0.03,0.07,0.10,0.07,0.03,
-      ];
-      for (let ky=0; ky<5; ky++) for (let kx=0; kx<5; kx++) {
-        const nx2=bx+kx-2, ny2=by+ky-2;
-        if (nx2<0||nx2>=W||ny2<0||ny2>=H) continue;
-        const w=K[ky*5+kx], idx=(ny2*W+nx2)*4;
-        fBuf[idx]  =Math.min(255,fBuf[idx]  +(rV*w|0));
-        fBuf[idx+1]=Math.min(255,fBuf[idx+1]+(gV*w|0));
-        fBuf[idx+2]=Math.min(255,fBuf[idx+2]+(bV*w|0));
-      }
-    } else {
-      // 3×3 soft kernel for slow particles
-      for (let dy=-1; dy<=1; dy++) for (let dx=-1; dx<=1; dx++) {
-        const nx2=bx+dx, ny2=by+dy;
-        if (nx2<0||nx2>=W||ny2<0||ny2>=H) continue;
-        const w=(dx===0&&dy===0)?1:(Math.abs(dx)+Math.abs(dy)===1)?0.3:0.08;
-        const idx=(ny2*W+nx2)*4;
-        fBuf[idx]  =Math.min(255,fBuf[idx]  +(rV*w|0));
-        fBuf[idx+1]=Math.min(255,fBuf[idx+1]+(gV*w|0));
-        fBuf[idx+2]=Math.min(255,fBuf[idx+2]+(bV*w|0));
-      }
-    }
-  }
-
-  // 3. Write to canvas
-  const img = ctxSynth.createImageData(W, H);
-  img.data.set(fBuf);
-  ctxSynth.putImageData(img, 0, 0);
-}
-
-function animateParticles() {
-  tickParticles();
-  partAnimFrame = requestAnimationFrame(animateParticles);
-}
-
-// ─────────────────────────────────────────
-// ─────────────────────────────────────────
-// SOUND — fully modulated, bucolicity-driven
-// Every value shifts continuously. Nothing stays still.
-// ─────────────────────────────────────────
-let soundCtx = null;
-let soundNodes = {};
-
-function startAmbientSound(bucolicity, seed) {
-  try { soundCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-  catch(e) { return; }
-
-  const ctx = soundCtx;
-  const r   = seededRand(seed + 9999);
-  const b   = bucolicity;
-  const now = ctx.currentTime;
-
-  // Master — slow fade in over 6s
-  const master = ctx.createGain();
-  master.gain.setValueAtTime(0, now);
-  master.gain.linearRampToValueAtTime(0.35, now + 6);
-  master.connect(ctx.destination);
-
-  // Base frequency: latitude-derived
-  const rootHz = 36 + (state.ambient.lat || 45) * 0.4 + r() * 8;
-
-  // ── REVERB (convolution approximated with delay network) ──
-  function makeReverb(wet) {
-    const delay1 = ctx.createDelay(2); delay1.delayTime.value = 0.38 + r()*0.2;
-    const delay2 = ctx.createDelay(2); delay2.delayTime.value = 0.55 + r()*0.3;
-    const fbGain = ctx.createGain(); fbGain.gain.value = 0.42;
-    const wetG   = ctx.createGain(); wetG.gain.value = wet;
-    delay1.connect(delay2); delay2.connect(fbGain);
-    fbGain.connect(delay1); delay1.connect(wetG);
-    return { input: delay1, output: wetG };
-  }
-  const reverb = makeReverb(0.55 + b * 0.25);
-  reverb.output.connect(master);
-
-  // ── SLOW MASTER LFO (0.02–0.07 Hz) — shapes everything ──
-  const masterLfo = ctx.createOscillator();
-  masterLfo.frequency.value = 0.02 + r() * 0.05;
-  const masterLfoG = ctx.createGain();
-  masterLfoG.gain.value = 1;
-  masterLfo.connect(masterLfoG);
-  masterLfo.start();
-
-  // ── HARMONIC STACK — Fibonacci series on rootHz ──
-  // pastoral: full warm stack; dystopian: sparse cold intervals
-  const harmonics = b > 0.5
-    ? [1, 2, 3, 5, 8, 13, 21]          // pastoral: full overtone series
-    : [1, 1.5, 2.07, 3.14, 4.67];      // dystopian: inharmonic
-
-  const hGain = ctx.createGain();
-  hGain.gain.value = 0.7;
-  hGain.connect(reverb.input);
-  hGain.connect(master);
-
-  harmonics.forEach((ratio, i) => {
-    const freq = rootHz * ratio;
-    if (freq > 16000) return;
-
-    const osc = ctx.createOscillator();
-    osc.type = b > 0.5 ? 'sine' : (i % 2 === 0 ? 'sine' : 'triangle');
-    // Micro-detune: each oscillator slightly off-center → beating
-    osc.frequency.value = freq * (1 + (r() - 0.5) * 0.006);
-
-    // Vibrato — faster and wider for dystopian
-    const vib = ctx.createOscillator();
-    vib.frequency.value = 2.5 + r() * 4 + (1-b) * 3;
-    const vibG = ctx.createGain();
-    vibG.gain.value = freq * (0.002 + (1-b) * 0.004);
-    vib.connect(vibG); vibG.connect(osc.frequency);
-    vib.start();
-
-    // Amplitude envelope — each harmonic breathes independently
-    const envG = ctx.createGain();
-    const baseAmp = [0.7, 0.45, 0.28, 0.18, 0.11, 0.06, 0.03][i] || 0.02;
-    envG.gain.setValueAtTime(0, now);
-    envG.gain.linearRampToValueAtTime(baseAmp, now + 4 + r() * 4);
-
-    // LFO amplitude modulation — each harmonic trembles at its own rate
-    const ampLfo = ctx.createOscillator();
-    ampLfo.frequency.value = 0.05 + r() * 0.2 + (1-b) * 0.3;
-    const ampLfoG = ctx.createGain();
-    ampLfoG.gain.value = baseAmp * (0.15 + (1-b) * 0.25);
-    ampLfo.connect(ampLfoG);
-    ampLfoG.connect(envG.gain);
-    ampLfo.start();
-
-    osc.connect(envG); envG.connect(hGain);
-    osc.start();
-  });
-
-  // ── FILTER SWEEP — opens and closes over time ──
-  const filt = ctx.createBiquadFilter();
-  filt.type = 'lowpass';
-  filt.frequency.value = b > 0.5 ? 1200 : 400;
-  filt.Q.value = 1.4;
-
-  const filtLfo = ctx.createOscillator();
-  filtLfo.frequency.value = 0.03 + r() * 0.04;
-  const filtLfoG = ctx.createGain();
-  // pastoral: filter opens wide; dystopian: tight dark sweep
-  filtLfoG.gain.value = b > 0.5 ? 800 : 200;
-  filtLfo.connect(filtLfoG); filtLfoG.connect(filt.frequency);
-  filtLfo.start();
-
-  // Connect hGain through filter for coloured output
-  // (hGain already connected directly for high-freq content)
-  // Extra filtered copy at lower level
-  const filtCopy = ctx.createGain(); filtCopy.gain.value = 0.4;
-  hGain.connect(filt); filt.connect(filtCopy); filtCopy.connect(master);
-
-  // ── NOISE TEXTURE ──
-  const noiseLen = ctx.sampleRate * 3;
-  const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
-  const nd = noiseBuf.getChannelData(0);
-  for (let i = 0; i < noiseLen; i++) nd[i] = Math.random()*2-1;
-
-  const noise = ctx.createBufferSource();
-  noise.buffer = noiseBuf; noise.loop = true;
-
-  const nFilt = ctx.createBiquadFilter();
-  // pastoral: gentle wind (low); dystopian: industrial hiss (high-mid)
-  nFilt.type = b > 0.5 ? 'lowpass' : 'bandpass';
-  nFilt.frequency.value = b > 0.5 ? 180 + b*200 : 800 + (1-b)*1200;
-  nFilt.Q.value = b > 0.5 ? 0.5 : 2.5;
-
-  const nGain = ctx.createGain();
-  nGain.gain.setValueAtTime(0, now);
-  nGain.gain.linearRampToValueAtTime(
-    b > 0.5 ? 0.012 + b*0.008 : 0.018 + (1-b)*0.025,
-    now + 8
-  );
-
-  // Noise amplitude modulated by masterLfo
-  const nModG = ctx.createGain(); nModG.gain.value = 0.004;
-  masterLfoG.connect(nModG); nModG.connect(nGain.gain);
-
-  noise.connect(nFilt); nFilt.connect(nGain); nGain.connect(reverb.input);
-  noise.start();
-
-  // ── DYSTOPIAN ONLY: sub-bass pulse + metallic hits ──
-  if (b < 0.7) {
-    const dyst = 1 - b;
-
-    // Sub-bass: sine + triangle pair, beating slowly
-    const subG = ctx.createGain();
-    subG.gain.setValueAtTime(0, now);
-    subG.gain.linearRampToValueAtTime(dyst * 0.5, now + 7);
-    subG.connect(master);
-
-    [rootHz * 0.5, rootHz * 0.504].forEach(f => {
-      const s = ctx.createOscillator(); s.type = 'sine';
-      s.frequency.value = f; s.connect(subG); s.start();
-    });
-
-    // Sub LFO pulse (0.5–1.5 Hz) — heartbeat rhythm
-    const subLfo = ctx.createOscillator();
-    subLfo.frequency.value = 0.5 + dyst * r();
-    const subLfoG = ctx.createGain(); subLfoG.gain.value = dyst * 0.3;
-    subLfo.connect(subLfoG); subLfoG.connect(subG.gain);
-    subLfo.start();
-
-    // Metallic impact: scheduled randomly, varies in pitch and delay
-    function scheduleHit() {
-      if (!soundCtx || soundCtx.state === 'closed') return;
-      try {
-        const t = ctx.currentTime;
-        // Short metallic transient: exponential decay
-        const hitF = 55 + r() * 180;
-        const imp = ctx.createOscillator();
-        imp.type = 'sawtooth';
-        imp.frequency.setValueAtTime(hitF * 3, t);
-        imp.frequency.exponentialRampToValueAtTime(hitF * 0.4, t + 0.6);
-        const impG = ctx.createGain();
-        impG.gain.setValueAtTime(dyst * 0.22, t);
-        impG.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
-        const impFilt = ctx.createBiquadFilter();
-        impFilt.type = 'bandpass'; impFilt.frequency.value = hitF * 2; impFilt.Q.value = 5;
-        imp.connect(impFilt); impFilt.connect(impG); impG.connect(reverb.input);
-        imp.start(t); imp.stop(t + 1);
-      } catch(e) {}
-      setTimeout(scheduleHit, (2000 + r() * 8000) / dyst);
-    }
-    setTimeout(scheduleHit, 2000 + r() * 3000);
-  }
-
-  // ── PASTORAL ONLY: high harmonic shimmer ──
-  if (b > 0.4) {
-    const shimG = ctx.createGain();
-    shimG.gain.setValueAtTime(0, now);
-    shimG.gain.linearRampToValueAtTime((b-0.4) * 0.06, now + 10);
-    shimG.connect(reverb.input);
-
-    // Very high sine waves: Turrell-like luminous frequencies
-    [rootHz*13, rootHz*21, rootHz*34].forEach((f, i) => {
-      if (f > 16000) return;
-      const s = ctx.createOscillator(); s.type = 'sine';
-      s.frequency.value = f * (1 + (r()-0.5)*0.003);
-      const sg = ctx.createGain(); sg.gain.value = [0.6,0.35,0.18][i];
-      // Each shimmer oscillator has its own slow AM
-      const sLfo = ctx.createOscillator();
-      sLfo.frequency.value = 0.08 + r()*0.15;
-      const sLfoG = ctx.createGain(); sLfoG.gain.value = 0.4;
-      sLfo.connect(sLfoG); sLfoG.connect(sg.gain);
-      sLfo.start();
-      s.connect(sg); sg.connect(shimG); s.start();
-    });
-  }
-}
-// ─────────────────────────────────────────
-// FINALIZE — the field emerges
-// ─────────────────────────────────────────
-function finalize() {
-  const bucolicity = computeBucolicity();
-  const seed       = computeSeed();
-
-  // Cap canvas resolution for performance
-  const W = Math.min(window.innerWidth,  1440);
-  const H = Math.min(window.innerHeight, 900);
-  cSynth.width  = W; cSynth.height = H;
-  cSynth.style.width  = window.innerWidth  + 'px';
-  cSynth.style.height = window.innerHeight + 'px';
-
-  fieldParams = buildFieldParams(bucolicity, seed);
-  initParticleField(W, H, bucolicity, seed);
-
-  // Bring synth canvas to front, full opacity
-  const synthEl = document.getElementById('layer-synth');
-  synthEl.style.mixBlendMode = 'normal';
-  synthEl.style.zIndex       = '10';
-  synthEl.style.transition   = 'opacity 2.5s ease';
-
-  // Start particle loop
-  animateParticles();
-  setTimeout(() => { synthEl.style.opacity = '1'; }, 80);
-
-  // Sound — slightly delayed so visual leads
-  setTimeout(() => startAmbientSound(bucolicity, seed), 1200);
-
-  // Minimal bottom-left label — just season/state
-  const label = bucolicity > 0.68 ? 'pastoral'
-              : bucolicity > 0.38 ? 'liminal'
-              : 'nocturnal';
-  const now2  = new Date();
-  const pad2  = n => String(n).padStart(2,'0');
-  document.getElementById('footer-meta').textContent =
-    `${label}\n${now2.getFullYear()}-${pad2(now2.getMonth()+1)}-${pad2(now2.getDate())}`;
-
-  setTimeout(() => {
-    document.getElementById('hapax-footer').classList.add('visible');
-  }, 1800);
-
-  // Show webcam after field settles — wait for geolocation to resolve first
-  setTimeout(() => {
-    // If geolocation hasn't resolved yet, wait a bit more
-    const tryWebcam = () => {
-      if (state.ambient.lat !== 45.40 || state.ambient.lon !== 11.87) {
-        findAndShowWebcam();
-      } else {
-        setTimeout(findAndShowWebcam, 2000);
-      }
-    };
-    tryWebcam();
-  }, 3000);
-}
-// ─────────────────────────────────────────
-// INTRO — start
-// ─────────────────────────────────────────
-// Auto-start — no intro screen
-
-// ─────────────────────────────────────────
-// WEBCAM — auto-shows best camera pointing at user
-// blended over the particle field as screen layer
-// ─────────────────────────────────────────
-function haversine(lat1, lng1, lat2, lng2) {
-  const R = 6371000, r = d => d * Math.PI / 180;
-  const a = Math.sin(r(lat2-lat1)/2)**2 +
-    Math.cos(r(lat1))*Math.cos(r(lat2))*Math.sin(r(lng2-lng1)/2)**2;
+function distKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function bearing(lat1, lng1, lat2, lng2) {
-  const r = d => d * Math.PI / 180;
-  const y = Math.sin(r(lng2-lng1)) * Math.cos(r(lat2));
-  const x = Math.cos(r(lat1)) * Math.sin(r(lat2)) -
-    Math.sin(r(lat1)) * Math.cos(r(lat2)) * Math.cos(r(lng2-lng1));
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-
-async function findAndShowWebcam() {
-  const lat = state.ambient.lat || 45.40;
-  const lon = state.ambient.lon || 11.87;
-
-  let bestCam   = null;
-  let camDist   = null;
-  let camLat    = null, camLon = null;
-
-  try {
-    const res  = await fetch(`/api/webcams?lat=${lat}&lon=${lon}`);
-    const data = await res.json();
-    const webcams = (data.webcams || []).filter(w => w.status === 'active');
-
-    if (webcams.length === 0) return;
-
-    // Score cameras by direction toward user
-    const scored = webcams.map(w => {
-      let score = 1000;
-      const t = (w.title || '').toLowerCase();
-
-      // Compute distance if location available
-      if (w.location?.latitude && w.location?.longitude) {
-        const dLat = (w.location.latitude - lat) * Math.PI / 180;
-        const dLon = (w.location.longitude - lon) * Math.PI / 180;
-        const a = Math.sin(dLat/2)**2 +
-          Math.cos(lat*Math.PI/180)*Math.cos(w.location.latitude*Math.PI/180)*
-          Math.sin(dLon/2)**2;
-        const d = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        score -= d / 100;
-
-        // Boost if title contains direction pointing roughly toward user
-        const btu = bearing(w.location.latitude, w.location.longitude, lat, lon);
-        const dirMap = {
-          'north':0,'northeast':45,'east':90,'southeast':135,
-          'south':180,'southwest':225,'west':270,'northwest':315,
-          'nord':0,'est':90,'sud':180,'ovest':270,
-          '› n':0,'› ne':45,'› e':90,'› se':135,
-          '› s':180,'› sw':225,'› w':270,'› nw':315,
-          '› north':0,'› south':180,'› east':90,'› west':270,
-        };
-        for (const [word, deg] of Object.entries(dirMap)) {
-          if (t.includes(word)) {
-            const diff = Math.abs(((btu - deg + 540) % 360) - 180);
-            if (diff < 70) score += 500;
-            break;
-          }
-        }
-      }
-
-      // Prefer cams with player data already in response
-      if (w.player) score += 200;
-
-      return { w, score };
-    }).sort((a,b) => b.score - a.score);
-
-    bestCam = scored[0].w;
-
-    if (bestCam.location?.latitude && bestCam.location?.longitude) {
-      camLat = bestCam.location.latitude;
-      camLon = bestCam.location.longitude;
-      const dLat = (camLat - lat) * Math.PI / 180;
-      const dLon = (camLon - lon) * Math.PI / 180;
-      const a = Math.sin(dLat/2)**2 +
-        Math.cos(lat*Math.PI/180)*Math.cos(camLat*Math.PI/180)*
-        Math.sin(dLon/2)**2;
-      camDist = Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-    }
-  } catch(e) { return; }
-
-  if (!bestCam) return;
-
-  // Build player URL — try from response first, fallback to public embed by webcamId
-  let playerUrl = bestCam.player?.day?.embed
-               || bestCam.player?.embed
-               || `https://webcams.windy.com/webcams/public/embed/player/${bestCam.webcamId}/day`;
-
-  const overlay  = document.getElementById('cam-overlay');
-  const camFrame = document.getElementById('cam-iframe');
-  const label    = document.getElementById('cam-label');
-
-  const now = new Date();
-  const pad = n => String(n).padStart(2,'0');
-  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  const dateStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-  const distStr = camDist
-    ? (camDist >= 1000 ? `${(camDist/1000).toFixed(1)}km` : `${camDist}m`)
-    : '—';
-  const camBearing = (camLat && camLon)
-    ? Math.round(bearing(camLat, camLon, lat, lon)) : null;
-  const dirStr = camBearing !== null
-    ? `${['N','NE','E','SE','S','SW','W','NW'][Math.round(camBearing/45)%8]} ${camBearing}°`
-    : '—';
-
-  label.textContent = [
-    `CAM  ${bestCam.title || ''}`,
-    `DIST ${distStr}   DIR ${dirStr}`,
-    `LOC  ${(camLat||lat).toFixed(4)}°  ${(camLon||lon).toFixed(4)}°`,
-    `UTC  ${dateStr}  ${timeStr}`,
-  ].join('\n');
-
-  camFrame.src = playerUrl;
-  overlay.classList.add('visible');
-  startCRTFilter();
-
-  // Minimap — user vs camera position
-  if (camLat && camLon) {
-    const userLat2 = state.ambient.lat || 45.40;
-    const userLon2 = state.ambient.lon || 11.87;
-    drawMinimap(userLat2, userLon2, camLat, camLon);
-    drawUserDotOnCam(camLat, camLon, camBearing || 0, userLat2, userLon2);
-  }
-}
-
-function bearing(lat1, lon1, lat2, lon2) {
-  const r = d => d * Math.PI / 180;
-  const y = Math.sin(r(lon2-lon1)) * Math.cos(r(lat2));
-  const x = Math.cos(r(lat1)) * Math.sin(r(lat2)) -
-    Math.sin(r(lat1)) * Math.cos(r(lat2)) * Math.cos(r(lon2-lon1));
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-
-// CRT filter — subtle, data readable
-let crtFrame = null;
-function startCRTFilter() {
-  const canvas = document.getElementById('crt-canvas');
-  const ctx    = canvas.getContext('2d');
-
-  function resize() {
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-  resize();
-  window.addEventListener('resize', resize);
-
-  let tick = 0;
-  function drawCRT() {
-    const W = canvas.width, H = canvas.height;
-    ctx.clearRect(0, 0, W, H);
-
-    // Scanlines — light, every 4px so video remains readable
-    for (let y = 0; y < H; y += 4) {
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';
-      ctx.fillRect(0, y, W, 1);
-    }
-
-    // Single slow horizontal interference band
-    const bandY = ((tick * 0.4) % H);
-    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.025})`;
-    ctx.fillRect(0, bandY, W, 1 + Math.random() * 2);
-
-    // Sparse pixel noise — very few, just enough to feel analogue
-    const nPx = Math.floor(W * H * 0.00012);
-    for (let i = 0; i < nPx; i++) {
-      const v = Math.random() > 0.5 ? 200 : 0;
-      ctx.fillStyle = `rgba(${v*0.7|0},${v}  ,${v*0.7|0},${Math.random() * 0.12})`;
-      ctx.fillRect(Math.random()*W|0, Math.random()*H|0, 1, 1);
-    }
-
-    // Rare glitch — very occasional
-    if (Math.random() < 0.004) {
-      const gy = Math.random() * H | 0;
-      ctx.fillStyle = `rgba(140,255,140,${Math.random() * 0.06})`;
-      ctx.fillRect(0, gy, W, 1);
-    }
-
-    // Subtle green phosphor wash — low opacity
-    ctx.fillStyle = 'rgba(0,10,0,0.04)';
-    ctx.fillRect(0, 0, W, H);
-
-    tick++;
-    crtFrame = requestAnimationFrame(drawCRT);
-  }
-  drawCRT();
-}
-
-// ── MINIMAP ──────────────────────────────
-function drawMinimap(userLat, userLon, camLat, camLon) {
-  const canvas = document.getElementById('minimap');
-  if (!canvas) return;
+// ── DRAW OVERLAY ─────────────────────────────────────────────────────────────
+function drawOverlay(canvas, webcam, userLat, userLon, color, idx) {
   const ctx = canvas.getContext('2d');
-  const W = canvas.width  = 140;
-  const H = canvas.height = 140;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
 
-  ctx.fillStyle = 'rgba(4,4,10,0.85)';
-  ctx.fillRect(0, 0, W, H);
+  const camLat = webcam.location.latitude;
+  const camLon = webcam.location.longitude;
+  const br = bearing(camLat, camLon, userLat, userLon);
+  const dist = distKm(camLat, camLon, userLat, userLon);
 
-  ctx.strokeStyle = 'rgba(140,255,140,0.06)';
-  ctx.lineWidth = 0.5;
-  for (let i = 1; i < 4; i++) {
-    ctx.beginPath(); ctx.moveTo(W*i/4,0); ctx.lineTo(W*i/4,H); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0,H*i/4); ctx.lineTo(W,H*i/4); ctx.stroke();
-  }
+  // arrow direction from center toward bearing
+  const cx = W / 2, cy = H / 2;
+  const rad = br * Math.PI / 180;
+  const reach = Math.min(W, H) * 0.36;
 
-  const latCtr = (userLat + camLat) / 2;
-  const lonCtr = (userLon + camLon) / 2;
-  const latRange = Math.max(Math.abs(userLat - camLat), 0.015) * 1.4;
-  const lonRange = Math.max(Math.abs(userLon - camLon), 0.015) * 1.4;
+  const ex = cx + Math.sin(rad) * reach;
+  const ey = cy - Math.cos(rad) * reach;
 
-  const toX = lon => (lon - lonCtr) / lonRange * W + W/2;
-  const toY = lat => H/2 - (lat - latCtr) / latRange * H;
+  // outer circle
+  const R = Math.min(W, H) * 0.12;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.75;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.stroke();
 
-  const ux = toX(userLon), uy = toY(userLat);
-  const cx = toX(camLon),  cy = toY(camLat);
+  // cross ticks
+  const gap = R + 6, arm = 14;
+  [[cx, cy-gap, cx, cy-gap-arm],[cx, cy+gap, cx, cy+gap+arm],
+   [cx-gap, cy, cx-gap-arm, cy],[cx+gap, cy, cx+gap+arm, cy]].forEach(([x1,y1,x2,y2]) => {
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  });
 
-  // Dashed line
-  ctx.strokeStyle = 'rgba(140,255,140,0.18)';
-  ctx.lineWidth = 0.5;
-  ctx.setLineDash([3,5]);
-  ctx.beginPath(); ctx.moveTo(ux,uy); ctx.lineTo(cx,cy); ctx.stroke();
-  ctx.setLineDash([]);
+  // center dot
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2.5, 0, Math.PI*2);
+  ctx.fill();
 
-  // FOV cone from camera toward user
-  const ang = Math.atan2(uy-cy, ux-cx);
-  ctx.fillStyle = 'rgba(140,255,140,0.06)';
+  // direction arrow
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
   ctx.beginPath();
   ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + Math.cos(ang-0.5)*20, cy + Math.sin(ang-0.5)*20);
-  ctx.lineTo(cx + Math.cos(ang+0.5)*20, cy + Math.sin(ang+0.5)*20);
-  ctx.closePath(); ctx.fill();
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  ctx.setLineDash([]);
 
-  // Camera circle
-  ctx.strokeStyle = 'rgba(140,255,140,0.65)';
+  // arrowhead
+  const headLen = 10;
+  const a1 = rad + Math.PI - 0.4, a2 = rad + Math.PI + 0.4;
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex + headLen * Math.sin(a1), ey - headLen * Math.cos(a1));
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex + headLen * Math.sin(a2), ey - headLen * Math.cos(a2));
+  ctx.stroke();
+
+  // ── HUD text ───────────────────────────────────────────────────────────────
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = color;
+  ctx.font = `bold 10px 'Courier New', monospace`;
+
+  const camTitle = (webcam.title || 'UNKNOWN').toUpperCase().slice(0, 28);
+  const camCity  = (webcam.location.city || webcam.location.country || '???').toUpperCase();
+  const status   = (webcam.status || 'ACTIVE').toUpperCase();
+  const updated  = webcam.lastUpdatedOn ? new Date(webcam.lastUpdatedOn*1000).toISOString().replace('T',' ').slice(0,19) : '---';
+
+  const lines = [
+    `CH-0${idx+1} // ${camTitle}`,
+    `CAM  LAT ${fmtCoord(camLat,'N','S')}  LON ${fmtCoord(camLon,'E','W')}`,
+    `LOC  ${camCity}`,
+    `USER LAT ${fmtCoord(userLat,'N','S')}  LON ${fmtCoord(userLon,'E','W')}`,
+    `BRG  ${br.toFixed(2).padStart(6)}°   DIST ${dist.toFixed(1)} km`,
+    `STAT ${status}   UPD ${updated}`,
+  ];
+
+  const lineH = 14;
+  const padX = 10, padY = 10;
+  const boxH = lines.length * lineH + 10;
+  const boxW = 310;
+
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(padX, padY, boxW, boxH);
+
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = color;
+  lines.forEach((l, i) => ctx.fillText(l, padX + 6, padY + 14 + i * lineH));
+
+  // corner brackets
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = color;
   ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.stroke();
-
-  // User dot
-  ctx.fillStyle = 'rgba(255,80,80,0.9)';
-  ctx.beginPath(); ctx.arc(ux,uy,3,0,Math.PI*2); ctx.fill();
-
-  ctx.font = '7px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(140,255,140,0.4)';
-  ctx.fillText('CAM', cx, cy - 8);
-  ctx.fillStyle = 'rgba(255,100,100,0.5)';
-  ctx.fillText('YOU', ux, uy - 7);
-
-  canvas.classList.add('visible');
+  const bw = boxW, bh = boxH, bx = padX, by = padY, blen = 8;
+  [[bx,by,1,0],[bx,by,0,1],[bx+bw,by,-1,0],[bx+bw,by,0,1],
+   [bx,by+bh,1,0],[bx,by+bh,0,-1],[bx+bw,by+bh,-1,0],[bx+bw,by+bh,0,-1]].forEach(([x,y,dx,dy]) => {
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+dx*blen, y+dy*blen); ctx.stroke();
+  });
 }
 
-// ── USER DOT ON WEBCAM FRAME ─────────────
-function drawUserDotOnCam(camLat, camLon, camBearing, userLat, userLon) {
-  const overlay = document.getElementById('cam-overlay');
-  let dc = document.getElementById('cam-dot-canvas');
-  if (!dc) {
-    dc = document.createElement('canvas');
-    dc.id = 'cam-dot-canvas';
-    dc.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:6;';
-    overlay.appendChild(dc);
+function fmtCoord(val, pos, neg) {
+  const d = Math.abs(val).toFixed(5);
+  return `${val >= 0 ? pos : neg} ${d}`;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  setStatus('ACQUIRING GPS COORDINATES');
+  let userLat, userLon;
+  try {
+    const pos = await new Promise((res, rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 }));
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+  } catch(e) {
+    setStatus('GPS DENIED — USING DEFAULT COORDS');
+    userLat = 41.9028; userLon = 12.4964; // Roma fallback
+    await sleep(1200);
   }
-  dc.width  = window.innerWidth;
-  dc.height = window.innerHeight;
-  const ctx2 = dc.getContext('2d');
 
-  // Estimate horizontal position: ±35° from centre of 70° FOV
-  const toRad = d => d * Math.PI / 180;
-  const y2 = Math.sin(toRad(userLon-camLon)) * Math.cos(toRad(userLat));
-  const x2 = Math.cos(toRad(camLat))*Math.sin(toRad(userLat)) -
-              Math.sin(toRad(camLat))*Math.cos(toRad(userLat))*Math.cos(toRad(userLon-camLon));
-  const bearingToCam = (Math.atan2(y2,x2)*180/Math.PI + 360) % 360;
-  const rel = ((bearingToCam - camBearing + 540) % 360) - 180;
-  const xFrac = Math.max(0.08, Math.min(0.92, 0.5 + rel/70));
-  const W2 = dc.width, H2 = dc.height;
-  const dotX = W2 * xFrac;
-  const dotY = H2 * 0.54; // horizon
+  setStatus(`COORDS ACQUIRED: ${fmtCoord(userLat,'N','S')} ${fmtCoord(userLon,'E','W')}`);
+  await sleep(600);
+  setStatus('QUERYING WINDY SURVEILLANCE NETWORK');
 
-  let ph = 0;
-  function anim() {
-    ctx2.clearRect(0,0,W2,H2);
-    const p = 0.5 + 0.5*Math.sin(ph); ph += 0.055;
-    const alpha = 0.5 + p*0.25;
+  let webcams;
+  try {
+    const r = await fetch(`/api/webcams?lat=${userLat}&lon=${userLon}`);
+    const data = await r.json();
+    webcams = (data.webcams || []).filter(w => w.status === 'active').slice(0, 4);
+  } catch(e) {
+    setStatus('NETWORK ERROR: ' + e.message);
+    return;
+  }
 
-    ctx2.strokeStyle = `rgba(255,55,55,${alpha})`;
-    ctx2.lineWidth = 0.8;
-    ctx2.setLineDash([4,4]);
-    [[dotX-26,dotY,dotX-9,dotY],[dotX+9,dotY,dotX+26,dotY],
-     [dotX,dotY-26,dotX,dotY-9],[dotX,dotY+9,dotX,dotY+26]].forEach(([x1,y1,x2,y2]) => {
-      ctx2.beginPath(); ctx2.moveTo(x1,y1); ctx2.lineTo(x2,y2); ctx2.stroke();
+  if (!webcams.length) {
+    setStatus('NO WEBCAMS FOUND IN RANGE');
+    return;
+  }
+
+  setStatus(`${webcams.length} FEEDS ACQUIRED — INITIALIZING DISPLAY`);
+  await sleep(500);
+
+  document.getElementById('loading').style.display = 'none';
+  buildGrid(webcams, userLat, userLon);
+}
+
+function buildGrid(webcams, userLat, userLon) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  webcams.forEach((wc, i) => {
+    const color = CHANNEL_COLORS[i];
+    const playerUrl = wc.player?.day?.embed || wc.player?.embed || '';
+
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+
+    if (playerUrl) {
+      const iframe = document.createElement('iframe');
+      iframe.src = playerUrl;
+      iframe.allow = 'autoplay';
+      iframe.setAttribute('allowfullscreen', '');
+      cell.appendChild(iframe);
+    } else {
+      cell.style.background = '#080808';
+    }
+
+    const canvas = document.createElement('canvas');
+    cell.appendChild(canvas);
+    grid.appendChild(cell);
+
+    // draw after layout
+    requestAnimationFrame(() => drawOverlay(canvas, wc, userLat, userLon, color, i));
+  });
+
+  // redraw on resize
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.cell canvas').forEach((canvas, i) => {
+      if (webcams[i]) drawOverlay(canvas, webcams[i], userLat, userLon, CHANNEL_COLORS[i], i);
     });
-    ctx2.setLineDash([]);
-
-    ctx2.strokeStyle = `rgba(255,55,55,${(1-p)*0.55})`;
-    ctx2.lineWidth = 0.8;
-    ctx2.beginPath(); ctx2.arc(dotX,dotY,10+p*7,0,Math.PI*2); ctx2.stroke();
-
-    ctx2.fillStyle = `rgba(255,55,55,${0.7+p*0.3})`;
-    ctx2.beginPath(); ctx2.arc(dotX,dotY,3,0,Math.PI*2); ctx2.fill();
-
-    ctx2.fillStyle = `rgba(255,90,90,${0.45+p*0.2})`;
-    ctx2.font = '8px monospace';
-    ctx2.textAlign = 'left';
-    ctx2.fillText('YOU', dotX+12, dotY-12);
-
-    requestAnimationFrame(anim);
-  }
-  anim();
+  });
 }
 
-// ── AUTO-START ───────────────────────────
-document.getElementById('ambient-bar').classList.add('visible');
-setTimeout(finalize, 1200);
+function setStatus(msg) {
+  const el = document.getElementById('load-status');
+  if (el) el.innerHTML = msg + '<span class="blink">_</span>';
+}
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+init();
 </script>
 </body>
 </html>
